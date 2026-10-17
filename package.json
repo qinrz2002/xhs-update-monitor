@@ -1,0 +1,85 @@
+{
+  "name": "xhs-update-monitor",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Windows 本地小红书多博主更新监控",
+  "main": "src/main.cjs",
+  "scripts": {
+    "start": "electron .",
+    "test": "node scripts/test.cjs",
+    "package": "node scripts/package-modern-installer.cjs"
+  },
+  "devDependencies": {
+    "electron": "44.7.2",
+    "electron-builder": "26.15.3"
+  },
+  "dependencies": {
+    "@ikenxuan/xhshow-ts": "1.2.0",
+    "electron-updater": "6.8.9"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/qinrz2002/xhs-update-monitor.git"
+  },
+  "author": "qinrz2002",
+  "packageManager": "pnpm@11.25.0",
+  "build": {
+    "appId": "Local.XhsUpdateMonitor",
+    "productName": "小红书更新监控",
+    "asar": true,
+    "npmRebuild": false,
+    "directories": {
+      "output": "release/installer"
+    },
+    "files": [
+      "src/**",
+      "ui/**",
+      "package.json",
+      "!src/legacy-instances.json"
+    ],
+    "extraMetadata": {
+      "main": "src/main.cjs"
+    },
+    "electronLanguages": [
+      "zh-CN",
+      "en-US"
+    ],
+    "compression": "maximum",
+    "win": {
+      "target": "nsis",
+      "icon": "ui/app.ico",
+      "artifactName": "XhsUpdateMonitor-Setup-${version}.${ext}",
+      "signExecutable": false
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "deleteAppDataOnUninstall": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "include": "build/installer.nsh",
+      "installerLanguages": [
+        "zh_CN"
+      ],
+      "language": "2052",
+      "multiLanguageInstaller": true,
+      "installerSidebar": "build/installerSidebar.bmp",
+      "uninstallerSidebar": "build/uninstallerSidebar.bmp",
+      "installerHeader": "build/installerHeader.bmp",
+      "installerIcon": "ui/app.ico",
+      "uninstallerIcon": "ui/app.ico"
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "qinrz2002",
+        "repo": "xhs-update-monitor",
+        "releaseType": "release"
+      }
+    ],
+    "asarUnpack": [
+      "src/instance-probe.exe"
+    ]
+  }
+}

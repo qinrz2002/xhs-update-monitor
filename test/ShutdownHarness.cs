@@ -1,0 +1,10 @@
+using System;using System.Diagnostics;using System.IO;using System.Management;using System.Collections.Generic;
+internal static class ShutdownHarness{
+ static int Main(string[] args){try{
+ int prompts=0,closed=0;Func<bool> yes=()=>{prompts++;return true;};Func<System.Threading.Tasks.Task> close=()=>{closed++;return System.Threading.Tasks.Task.FromResult(0);};
+ if(!MonitorShutdown.ConfirmAndClose(()=>false,yes,close).GetAwaiter().GetResult()||prompts!=0||closed!=0)throw new Exception("No process branch");
+ if(MonitorShutdown.ConfirmAndClose(()=>true,()=>false,close).GetAwaiter().GetResult()||closed!=0)throw new Exception("Cancel must retain background");
+ if(!MonitorShutdown.ConfirmAndClose(()=>true,yes,close).GetAwaiter().GetResult()||closed!=1||prompts!=1)throw new Exception("Confirm must close before continuing");
+ bool rejected=false;try{MonitorShutdown.ConfirmAndClose(()=>true,yes,()=>{throw new IOException("fixture refusal");}).GetAwaiter().GetResult();}catch(IOException){rejected=true;}if(!rejected)throw new Exception("Refusal must block installation");
+ using(var p=Process.GetProcessById(Int32.Parse(args[0]))){var all=new List<Process>{p};using(var lookup=new ManagementObjectSearcher("SELECT ProcessId, CommandLine FROM Win32_Process WHERE ParentProcessId="+p.Id))using(var found=lookup.Get())foreach(ManagementObject child in found){string command=child["CommandLine"] as string;if(command!=null&&command.Contains("--type="))all.Add(Process.GetProcessById(Convert.ToInt32(child["ProcessId"])));}if(all.Count<2)throw new Exception("Missing real Electron helper fixture");try{MonitorShutdown.ShutdownProcesses(all.ToArray());if(!p.WaitForExit(10000))throw new Exception("Fixture did not exit");}finally{foreach(var item in all)if(item!=p)item.Dispose();}}File.WriteAllText(args[1],"{\"passed\":true,\"confirmationBranchesVerified\":true,\"electronHelpersIncludedInFixture\":true,\"forceKilled\":false,\"onlyFixtureTargeted\":true}");return 0;}catch(Exception e){File.WriteAllText(args[1],e.ToString());return 1;}}
+}

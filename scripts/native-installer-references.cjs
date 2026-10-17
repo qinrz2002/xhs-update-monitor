@@ -1,0 +1,2 @@
+const path=require('node:path');
+module.exports=function(){const framework=path.join(process.env.SystemRoot,'Microsoft.NET/Framework64/v4.0.30319');return ['System.dll','System.Core.dll','System.Management.dll','System.Windows.Forms.dll','System.Xaml.dll',...['WindowsBase.dll','PresentationCore.dll','PresentationFramework.dll'].map(name=>path.join(framework,'WPF',name))].map(file=>'/reference:'+file);};
