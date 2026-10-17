@@ -50,6 +50,7 @@ for(const u of updates){const row=el('div',undefined,'row '+(!u.read?'unread':''
 function tick(){document.querySelectorAll('[data-countdown]').forEach(n=>{if(!n.dataset.countdown){n.textContent='';return}const sec=Math.ceil((Number(n.dataset.countdown)-Date.now())/1000);n.textContent=sec>0?'剩余 '+String(Math.floor(sec/60)).padStart(2,'0')+':'+String(sec%60).padStart(2,'0'):'已到期 · 排队/暂停中';});}
 function updateRange(){const b=Number($('base').value),j=Number($('jitter').value);$('range').textContent=(b-j)+'～'+(b+j)+' 分钟';}
 function locateAuthor(id){highlightedAuthor=id;locateOnRender=true;filter='all';document.querySelectorAll('[data-filter]').forEach(b=>b.classList.toggle('active',b.dataset.filter==='all'));navigate('overview');if(snapshot)render(snapshot);}
+$('authors').addEventListener('click',event=>{if(!event.target.closest('tr[data-author-id]'))return;highlightedAuthor=null;locateOnRender=false;for(const row of $('authors').querySelectorAll('tr.located'))row.classList.remove('located');});
 let editingAuthor;
 function authorRange(){const global=$('author-global').checked;$('author-custom').disabled=global;const b=global?snapshot.config.baseMinutes:Number($('author-base').value),j=global?snapshot.config.jitterMinutes:Number($('author-jitter').value);$('author-range').textContent='实际随机范围：'+(b-j)+'～'+(b+j)+' 分钟';}
 function perAuthor(m){editingAuthor=m.id;$('author-settings-title').textContent=m.name+' · 博主设置';$('author-url').value=m.url;$('author-global').checked=!m.settings;$('author-base').value=m.settings?.baseMinutes??snapshot.config.baseMinutes;$('author-jitter').value=m.settings?.jitterMinutes??snapshot.config.jitterMinutes;$('author-settings-error').hidden=true;authorRange();$('author-settings').showModal();}
@@ -77,6 +78,7 @@ function renderSoftwareUpdate(state){
  $('update-status').textContent=labels[u.status]||'等待检查';$('update-progress').hidden=u.status!=='downloading';$('update-progress').value=u.percent||0;
  $('update-checked').textContent=u.checkedAt?'最近检查：'+time(u.checkedAt,true):'';
  $('install-update').hidden=u.status!=='ready';$('update-installer-note').hidden=u.status!=='installer_required';
+ $('check-update').hidden=u.status==='ready';
  $('check-update').disabled=['checking','available','downloading','ready'].includes(u.status);
  renderReleaseDetails('about',u);
  renderUpdateNotice(u,version);

@@ -4,7 +4,7 @@
 
 一个运行在 Windows 上的小红书多博主更新监控面板。添加你关注的博主主页，设置检测间隔，发现新笔记后用弹窗和提示音提醒，减少反复打开主页查看的操作。
 
-**当前版本：v1.0.1。** 前往 [GitHub Releases](https://github.com/qinrz2002/xhs-update-monitor/releases/latest) 下载 Windows 安装包。每次更新内容与北京时间记录在 [更新日志](CHANGELOG.md)。
+**当前版本：v1.0.2。** 前往 [GitHub Releases](https://github.com/qinrz2002/xhs-update-monitor/releases/latest) 下载 Windows 安装包。每次更新内容与北京时间记录在 [更新日志](CHANGELOG.md)。
 
 **免责声明：本项目仅供学习与技术研究，请勿用于任何非法用途。** 使用时请遵守适用法律法规及平台规则，尊重他人隐私与合法权益。完整说明见 [免责声明](DISCLAIMER.md)。
 
