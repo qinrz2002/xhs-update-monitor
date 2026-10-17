@@ -4,7 +4,7 @@
 
 一个运行在 Windows 上的小红书多博主更新监控面板。添加你关注的博主主页，设置检测间隔，发现新笔记后用弹窗和提示音提醒，减少反复打开主页查看的操作。
 
-**当前版本：v1.0.0。** 前往 [GitHub Releases](https://github.com/qinrz2002/xhs-update-monitor/releases/latest) 下载 Windows 安装包。
+**当前版本：v1.0.1。** 前往 [GitHub Releases](https://github.com/qinrz2002/xhs-update-monitor/releases/latest) 下载 Windows 安装包。每次更新内容与北京时间记录在 [更新日志](CHANGELOG.md)。
 
 **免责声明：本项目仅供学习与技术研究，请勿用于任何非法用途。** 使用时请遵守适用法律法规及平台规则，尊重他人隐私与合法权益。完整说明见 [免责声明](DISCLAIMER.md)。
 
@@ -18,6 +18,7 @@
 - **亮暗主题**：手动切换并记住上次选择；关闭主窗口后可在托盘继续运行。
 - **本地保存**：设置与记录使用JSON，数据保存在程序旁的data文件夹；登录信息在本机加密保存。
 - **版本更新**：安装版启动后及每1小时检查GitHub正式Release，发现新版自动下载，完成后由你手动重启安装。
+- **更新说明**：发现新版时显示红色提示和应用内确认框，弹窗及“关于与更新”均展示更新内容与发布时间；可选择稍后更新。
 
 ## 界面预览
 
@@ -80,3 +81,10 @@ pnpm start
 ```
 
 运行 `pnpm test` 执行业务测试，运行 `pnpm package` 构建 Windows 安装器。构建产物位于 `release/installer`。请勿将本机 `data`、Cookie或加密登录态提交到仓库。第三方组件信息见 [组件说明](THIRD_PARTY_NOTICES.md)。
+
+## 发布新版本
+
+1. 修改 `package.json` 版本号，并在 `docs/releases.json` 顶部新增该版本的 `changes` 更新内容，`publishedAt` 先填 `null`。
+2. 运行 `node scripts/release-notes.cjs` 生成更新日志和发布说明，执行测试并提交到 main。
+3. 推送同名版本标签（例如 `v1.0.2`），GitHub Actions 会校验更新内容、构建并发布正式版本。
+4. 正式发布后，流程以 GitHub 的实际 `published_at` 自动填写 Release 说明、`CHANGELOG.md` 与版本记录，统一显示北京时间，保留历史版本记录。

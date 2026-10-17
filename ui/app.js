@@ -78,7 +78,49 @@ function renderSoftwareUpdate(state){
  $('update-checked').textContent=u.checkedAt?'最近检查：'+time(u.checkedAt,true):'';
  $('install-update').hidden=u.status!=='ready';$('update-installer-note').hidden=u.status!=='installer_required';
  $('check-update').disabled=['checking','available','downloading','ready'].includes(u.status);
+ renderReleaseDetails('about',u);
+ renderUpdateNotice(u,version);
 }
+function releaseTime(value){if(!value||!Number.isFinite(Date.parse(value)))return '';return new Intl.DateTimeFormat('zh-CN',{timeZone:'Asia/Shanghai',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',hourCycle:'h23'}).format(new Date(value))+'（北京时间）';}
+function renderReleaseDetails(prefix,u){
+ const section=$(prefix+'-release-details');section.hidden=!u.latest;
+ $(prefix+'-release-heading').textContent=(u.latest?'v'+u.latest+' · ':'')+'更新内容';
+ $(prefix+'-release-time').textContent=u.publishedAt?'发布时间：'+releaseTime(u.publishedAt):u.releaseInfoStatus==='loading'?'发布时间：正在读取…':'发布时间：暂未获取';
+ $(prefix+'-release-notes').textContent=u.releaseNotes||(u.releaseInfoStatus==='loading'?'正在读取此版本的更新内容…':'此版本暂未提供可显示的更新说明。');
+}
+const updateNoticesSeen=new Set();let latestSoftwareUpdate=null;
+function renderUpdateNotice(update,currentVersion){
+ latestSoftwareUpdate={...update,currentVersion};
+ const available=!!update.latest&&update.latest!==currentVersion&&['available','downloading','ready','error'].includes(update.status);
+ $('software-update-badge').hidden=!available;
+ $('software-update-badge').title=available?'发现新版本 v'+update.latest:'';
+ const dialog=$('software-update-dialog');
+ if(dialog.open){
+  renderReleaseDetails('prompt',update);
+  $('software-update-version').textContent='当前版本 v'+currentVersion+' → 新版本 v'+update.latest;
+  const ready=update.status==='ready',failed=update.status==='error',percent=Math.floor(update.percent||0);
+  $('software-update-prompt-status').textContent=ready?'新版已下载并校验完成。是否现在重启并更新？':failed?(update.error||'新版下载未完成，请前往软件更新查看。'):'新版正在后台下载'+(update.status==='downloading'?'（'+percent+'%）':'')+'，完成后即可重启更新。';
+  $('software-update-prompt-progress').hidden=!['available','downloading'].includes(update.status);$('software-update-prompt-progress').value=update.percent||0;
+  $('confirm-software-update').disabled=!ready&&!failed;
+  $('confirm-software-update').textContent=ready?'重启并更新':failed?'查看更新':'正在下载…';
+  if(!available)dialog.close();
+ }
+ maybeShowUpdateNotice();
+}
+function maybeShowUpdateNotice(){
+ const u=latestSoftwareUpdate,dialog=$('software-update-dialog');
+ if(!u||!u.latest||u.latest===u.currentVersion||!['available','downloading','ready'].includes(u.status)||updateNoticesSeen.has(u.latest)||document.querySelector('dialog[open]'))return;
+ updateNoticesSeen.add(u.latest);dialog.showModal();renderUpdateNotice(u,u.currentVersion);$('postpone-software-update').focus();
+}
+document.addEventListener('close',()=>queueMicrotask(maybeShowUpdateNotice),true);
+$('postpone-software-update').onclick=()=>$('software-update-dialog').close();
+$('close-software-update').onclick=()=>$('software-update-dialog').close();
+$('confirm-software-update').onclick=async()=>{
+ const u=latestSoftwareUpdate;if(u?.status==='error'){$('software-update-dialog').close();navigate('about');return;}
+ if(u?.status!=='ready')return;
+ const button=$('confirm-software-update');button.disabled=true;
+ try{await call('install-update');$('software-update-dialog').close();}catch(error){$('software-update-prompt-status').textContent=error.message;}finally{button.disabled=false;}
+};
  $('github-link').onclick=event=>{event.preventDefault();void call('open-github').catch(()=>{});};
  $('automatic-updates').onchange=()=>{void call('config',{automaticUpdates:$('automatic-updates').checked}).catch(()=>{});};
  $('check-update').onclick=()=>{void call('check-update').catch(()=>{});};

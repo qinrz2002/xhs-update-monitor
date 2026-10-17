@@ -11,6 +11,24 @@ tr.located{background:var(--redsoft)}.logo{white-space:nowrap}nav button{display
 #overview .table-scroll thead th{text-align:center;vertical-align:middle}
 #preview-author,#search-author{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600;min-height:44px}
 #preview-author:hover,#search-author:hover{filter:brightness(1.08)}
+#software-update-dialog{width:min(510px,94vw);max-width:510px;padding:26px;box-shadow:0 20px 70px #0005}
+#software-update-dialog::backdrop{background:#070b12a6}
+.software-update-prompt-heading{display:flex;gap:14px;align-items:center;margin-bottom:20px}
+.software-update-prompt-icon{width:46px;height:46px;border-radius:13px;background:var(--redsoft);color:var(--accent);display:grid;place-items:center;font-size:26px;flex-shrink:0}
+.software-update-prompt-heading h2{margin:0 0 5px;font-size:20px}
+.software-update-prompt-heading p{font-size:12px}
+#close-software-update{margin-left:auto;align-self:flex-start;border:0;background:transparent;color:var(--muted);font-size:23px;padding:0 5px;line-height:1.2}
+#software-update-prompt-status{color:var(--text);line-height:1.8}
+#software-update-prompt-progress{width:100%;height:7px;margin:16px 0 0;accent-color:var(--accent)}
+.software-update-prompt-help{font-size:12px;margin-top:13px}
+#software-update-dialog .toolbar{gap:10px;margin-top:24px}
+#software-update-badge{background:var(--accent);color:#fff}
+.release-details{margin-top:18px;padding:16px 18px;background:var(--soft);border:1px solid var(--border);border-radius:11px}
+.release-details h4{font-size:14px;margin:0 0 6px;color:var(--text)}
+.release-time{font-size:12px;margin-bottom:10px;line-height:1.7}
+.release-notes{white-space:pre-wrap;overflow-wrap:anywhere;font-size:13px;line-height:1.85;color:var(--text);max-height:260px;overflow:auto}
+#software-update-dialog{max-height:88vh;overflow:auto}
+#software-update-dialog .release-notes{max-height:180px}
 #add-author-dialog .discovery-card button{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
 nav b{display:inline-flex;align-items:center;justify-content:center;min-width:20px;height:20px;line-height:1;padding:0 5px;font-variant-numeric:tabular-nums;vertical-align:middle}
 .account-pill{max-width:160px;overflow:hidden;text-overflow:ellipsis}

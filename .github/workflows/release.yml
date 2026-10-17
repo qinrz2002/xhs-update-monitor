@@ -26,6 +26,8 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/')
         run: node scripts/verify-release-tag.cjs
       - run: pnpm test
+      - name: Verify version changes
+        run: node scripts/release-notes.cjs --check
       - run: pnpm package
       - uses: actions/upload-artifact@v4
         with:
@@ -38,10 +40,4 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/')
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh release view "%GITHUB_REF_NAME%" >nul 2>&1
-          if errorlevel 1 (
-            gh release create "%GITHUB_REF_NAME%" release/installer/*Setup*.exe release/installer/*.blockmap release/installer/latest.yml --verify-tag --title "小红书更新监控 %GITHUB_REF_NAME%" --notes-file docs/RELEASE_NOTES.md
-          ) else (
-            echo Release already published. Keeping its verified assets.
-          )
+        run: node scripts/publish-release.cjs
