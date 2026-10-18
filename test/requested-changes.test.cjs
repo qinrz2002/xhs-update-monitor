@@ -29,7 +29,7 @@ test('login identity comes from current account rather than the monitored profil
  const state={user:{loggedIn:true,userInfo:{userId:u,nickname:'登录账号'},userPageData:{basicInfo:{userId:a,nickname:'监控博主'}}}};assert.deepEqual(accountFromState(state),{id:u,name:'登录账号'});delete state.user.userInfo;assert.equal(accountFromState(state),null);assert.equal(avatarUrl('javascript:alert(1)'),null);assert.equal(avatarUrl('https://evil.test/avatar.png'),null);assert.equal(avatarUrl('http://sns-avatar-qc.xhscdn.com/a.jpg'),'https://sns-avatar-qc.xhscdn.com/a.jpg');
 });
 function homepage({newId=false,gap=false,short=false}={}){
- const cards=Array.from({length:30},(_,i)=>{const num=gap?100+i:newId?(i?i:99):i+1;return {id:num.toString(16).padStart(24,'0'),noteCard:{displayTitle:'文章'+num,time:1792210000000-i*1000,user:{userId:a},interactInfo:{sticky:false}}};});
+ const cards=Array.from({length:30},(_,i)=>{const num=gap?100+i:newId?(i?i:99):i+1;return {id:num.toString(16).padStart(24,'0'),noteCard:{displayTitle:'文章'+num,time:1792210000000+(num===99?1000:-(num-1)*1000),user:{userId:a},interactInfo:{sticky:false}}};});
  if(short)cards.splice(10);const state={user:{loggedIn:true,userInfo:{userId:u,nickname:'登录账号'},userPageData:{basicInfo:{userId:a,nickname:'博主',imageb:'https://sns-avatar-qc.xhscdn.com/a.jpg'}},noteQueries:[{userId:a,num:30,hasMore:true,cursor:'opaque'}],userNoteFetchingStatus:['resolved'],notes:[cards]}};
  return {status:200,headers:{},body:'<script>window.__INITIAL_STATE__='+JSON.stringify(state)+'</script>'};
 }

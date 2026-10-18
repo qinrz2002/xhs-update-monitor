@@ -9,7 +9,7 @@ const { Scheduler } = require('../src/scheduler.cjs');
 const { parseProfile, stateFromHtml, httpSessionVerified } = require('../src/collector.cjs');
 const { CurlTransport, parseResponse, checkedUrl } = require('../src/transport.cjs');
 const ID = '5e314c060000000001004e26', ID2 = '5e314c060000000001004e27';
-const note = (n,title='文章'+n) => ({ id: n.toString(16).padStart(24,'0'), title, coverPath:'/cover/'+n, pinned:false });
+const note = (n,title='文章'+n) => ({ id: n.toString(16).padStart(24,'0'), title, coverPath:'/cover/'+n, pinned:false, publishedAt:new Date(1792100000000+n*1000).toISOString() });
 function setup(t) {const root=path.resolve(__dirname,'../test-runs/test-data');fs.mkdirSync(root,{recursive:true});const dir=fs.mkdtempSync(path.join(root,'xhs-monitor-test-'));t.after(()=>{if(path.dirname(path.resolve(dir))!==root)throw new Error('Invalid cleanup path');fs.rmSync(dir,{recursive:true,force:true})});return new Store(dir)}
 const identity = id => ({id,name:'测试博主',url:'https://www.xiaohongshu.com/user/profile/'+id});
 const result = notes => ({status:'first_page',usable:true,loggedIn:true,stableIdFormat:true,coverageVerified:true,notes});

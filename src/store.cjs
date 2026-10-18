@@ -13,6 +13,16 @@ function randomDelay(config, random = Math.random) {
   const min = Math.ceil((b - j) * 60), max = Math.floor((b + j) * 60);
   return min + Math.floor(random() * (max - min + 1));
 }
+function publicationTime(value, now) {
+  if (typeof value !== 'string' || !value.trim()) return null;
+  const stamp = Date.parse(value);
+  // A missing/invalid timestamp is not proof of a new publication. Do not let
+  // an implausible future timestamp raise the author's persistent boundary.
+  return Number.isFinite(stamp) && stamp > 0 && stamp <= now + 5 * 60 * 1000 ? stamp : null;
+}
+function latestPublication(notes, now) {
+  return notes.reduce((latest, note) => Math.max(latest, publicationTime(note.publishedAt, now) ?? -Infinity), -Infinity);
+}
 class Store {
   constructor(directory) {
     this.directory = directory;
@@ -151,10 +161,26 @@ class Store {
     if (!result.coverageVerified) {
       m.status = 'incomplete'; m.message = '近期列表覆盖尚未验证，暂不生成新文章提醒。'; this.commit(); return { events: [] };
     }
-    const prior = new Set(m.seen), events = [];
+    const prior = new Set(m.seen), events = [], now = Date.now();
+    // Recover older JSON baselines from their last successful sample, never
+    // previewNotes (which may already contain the incoming, uncommitted page).
+    // Persist the maximum so deleting the newest card cannot move it backwards.
+    const previousBoundary = m.notificationBoundary?.version === 1 ? publicationTime(m.notificationBoundary.publishedThrough, now) : null;
+    const publishedThrough = Math.max(previousBoundary ?? -Infinity, latestPublication(m.notes, now));
+    const anchors = new Set(m.notes.filter(n => !n.pinned && publicationTime(n.publishedAt, now) === publishedThrough).map(n => n.id));
+    const anchorIndex = notes.findIndex(n => !n.pinned && anchors.has(n.id) && publicationTime(n.publishedAt, now) === publishedThrough);
+    let historicalCount = 0, unconfirmedCount = 0;
     const batchId = this.pending().find(u => u.batchId)?.batchId || randomUUID();
-    if (m.initialized) for (const note of notes) {
+    if (m.initialized) for (const [index, note] of notes.entries()) {
       if (!prior.has(note.id)) {
+        const published = publicationTime(note.publishedAt, now);
+        const isNewPublication = Number.isFinite(publishedThrough) && published !== null &&
+          (published > publishedThrough || (published === publishedThrough && !note.pinned && anchorIndex >= 0 && index < anchorIndex));
+        if (!isNewPublication) {
+          if (published === null || !Number.isFinite(publishedThrough)) unconfirmedCount++;
+          else historicalCount++;
+          continue;
+        }
         const unique = id + ':' + note.id;
         if (!this.state.updates.some(u => u.key === unique)) {
           const event = { ...note, key: unique, eventId: randomUUID(), batchId, userId: id, author: m.name, discoveredAt: new Date().toISOString(), read: false, ackAt: null };
@@ -162,9 +188,13 @@ class Store {
         }
       }
     }
+    const nextBoundary = Math.max(publishedThrough, latestPublication(notes, now));
+    m.notificationBoundary = { version: 1, publishedThrough: Number.isFinite(nextBoundary) ? new Date(nextBoundary).toISOString() : null };
     m.seen = [...new Set([...m.seen, ...notes.map(n => n.id)])];
     m.notes = notes; m.initialized = true; m.coverageVerified = true; m.coverageScope = result.coverageScope || 'verified_boundary'; m.lastSuccess = new Date().toISOString(); m.status = 'ok'; m.message = events.length ? `发现 ${events.length} 篇新笔记` : '检测成功'; m.failures = 0; m.candidate = null;
-    this.commit(); return { events };
+    if (historicalCount) m.message += `；同步 ${historicalCount} 篇较早笔记，未触发提醒`;
+    if (unconfirmedCount) m.message += `；${unconfirmedCount} 篇笔记的发布时间或历史边界未确认，仅同步列表`;
+    this.commit(); return { events, historicalCount, unconfirmedCount };
   }
 }
 module.exports = { Store, interval, randomDelay, DEFAULT_CONFIG };
