@@ -26,6 +26,10 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/')
         run: node scripts/verify-release-tag.cjs
       - run: pnpm test
+      - name: Install Electron for desktop checks
+        run: node node_modules/electron/install.js
+      - name: Verify desktop UI and animations with isolated fixtures
+        run: node scripts/verify-product-ui.cjs
       - name: Verify version changes
         run: node scripts/release-notes.cjs --check
       - run: pnpm package

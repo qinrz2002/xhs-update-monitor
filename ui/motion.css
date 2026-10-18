@@ -1,0 +1,40 @@
+/* Short, state-driven feedback. Infinite motion is limited to active tasks. */
+.app-header{position:sticky;top:0;z-index:4;backdrop-filter:blur(12px)}
+.author-card{scroll-margin-top:90px}
+button,[role=button]{transition:background .18s,border-color .18s,color .18s,box-shadow .18s,transform .18s}
+button:not(:disabled):active,[role=button]:active{transform:translateY(1px) scale(.98)}
+.metric[role=button]{cursor:pointer;transition:border-color .2s,box-shadow .2s,transform .2s}
+.metric[role=button]:hover{border-color:#a7b8cf88;box-shadow:0 5px 18px #2635500b;transform:translateY(-2px)}
+[role=button]:focus-visible{outline:3px solid #739fe980;outline-offset:3px}
+.theme-switch button.active{transition:background .2s,box-shadow .2s}
+.run-indicator{position:relative}
+.run-indicator.running::after{content:'';position:absolute;inset:0;border:1px solid var(--green);border-radius:inherit;animation:monitor-breathe 3.2s ease-out infinite;pointer-events:none}
+@keyframes monitor-breathe{0%,20%{transform:scale(1);opacity:0}35%{opacity:.28}80%,100%{transform:scale(1.18);opacity:0}}
+.is-loading>.icon{animation:task-spin 1.1s linear infinite}
+.actions .is-loading::before,#preview-author.is-loading::before,#search-author.is-loading::before,#verify.is-loading::before{content:'';width:12px;height:12px;border:1.5px solid currentColor;border-right-color:transparent;border-radius:50%;animation:task-spin .8s linear infinite;flex-shrink:0}
+@keyframes task-spin{to{transform:rotate(360deg)}}
+tr.is-checking td{background:var(--soft)}
+tr.is-checking .pill::before{animation:status-blink 1.3s ease-in-out infinite}
+@keyframes status-blink{50%{opacity:.3}}
+.row-more:hover .icon{color:var(--accent)}
+dialog{opacity:0;transform:translateY(9px) scale(.985);transition:opacity .19s,transform .24s cubic-bezier(.2,.75,.25,1),overlay .24s allow-discrete,display .24s allow-discrete}
+dialog[open]{opacity:1;transform:none}
+dialog::backdrop{opacity:0;transition:opacity .2s,overlay .24s allow-discrete,display .24s allow-discrete}
+dialog[open]::backdrop{opacity:1}
+dialog.settings-drawer{transform:translateX(100%)}
+dialog.settings-drawer[open]{transform:translateX(0)}
+[popover]{opacity:0;transform:translateY(-4px);transition:opacity .16s,transform .16s,overlay .16s allow-discrete,display .16s allow-discrete}
+[popover]:popover-open{opacity:1;transform:none}
+#message{transform:translateY(12px)}
+#message:popover-open{transform:none}
+@starting-style{
+ dialog[open]{opacity:0;transform:translateY(9px) scale(.985)}
+ dialog.settings-drawer[open]{opacity:0;transform:translateX(100%)}
+ dialog[open]::backdrop{opacity:0}
+ [popover]:popover-open{opacity:0;transform:translateY(-4px)}
+ #message:popover-open{opacity:0;transform:translateY(12px)}
+}
+@media(prefers-reduced-motion:reduce){
+ *,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}
+ .metric[role=button]:hover{transform:none}
+}

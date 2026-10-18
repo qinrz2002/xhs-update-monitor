@@ -47,7 +47,7 @@ function localWindow(options) {
 function openMain() {
   if(mainWindow&&!mainWindow.isDestroyed()){if(mainReady)restoreWindow(mainWindow);else activationPending=true;return;}
   mainReady=false;
-  mainWindow = localWindow({ title: '小红书更新监控', width: 1480, height: 960, minWidth: 1040, minHeight: 720, show: false, backgroundColor: store.state.config.theme === 'dark' ? '#101318' : '#f5f6f8', autoHideMenuBar: true });
+  mainWindow = localWindow({ title: '小红书更新监控', width: 1480, height: 960, minWidth: 1040, minHeight: 720, show: false, backgroundColor: store.state.config.theme === 'dark' ? '#10151c' : '#f5f7fa', autoHideMenuBar: true });
   recordStartup('main-window-created', { windowId: mainWindow.id });
   mainWindow.loadFile(path.join(ROOT, 'ui', 'index.html'));
   mainWindow.webContents.once('did-finish-load', () => recordStartup('main-document-loaded'));

@@ -70,6 +70,8 @@ scripts/*
 !scripts/verify-packaged-single-instance.cjs
 !scripts/release-notes.cjs
 !scripts/publish-release.cjs
+!scripts/verify-product-ui.cjs
+!scripts/verify-product-ui-child.cjs
 
 # Keep local working notes out of the public repository.
 docs/*
