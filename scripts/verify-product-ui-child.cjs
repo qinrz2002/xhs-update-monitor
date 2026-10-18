@@ -23,6 +23,7 @@ const checks=[],errors=[];
 (async()=>{
  await e.app.whenReady();let main;await until(()=>{main=e.BrowserWindow.getAllWindows().find(w=>w.webContents.getURL().endsWith('/ui/index.html'));return main;},'main');
  main.webContents.debugger.attach('1.3');
+ await main.webContents.debugger.sendCommand('Emulation.setEmulatedMedia',{features:[{name:'prefers-reduced-motion',value:'no-preference'}]});
  const viewport=async(width,height)=>{main.setSize(width,height);await main.webContents.debugger.sendCommand('Emulation.setDeviceMetricsOverride',{width,height,deviceScaleFactor:1,mobile:false});};
  await viewport(1480,960);
  main.webContents.on('console-message',event=>{if(event.level==='error')errors.push(event.message);});
@@ -34,8 +35,8 @@ const checks=[],errors=[];
  assert.equal(await js('document.querySelectorAll(".metric[role=button][tabindex]").length'),4);
  const centered=await js(`Array.from(document.querySelectorAll('.metric')).map(card=>{const a=card.getBoundingClientRect(),b=card.querySelector('.metric-icon').getBoundingClientRect();return Math.abs((a.top+a.bottom-b.top-b.bottom)/2);})`);assert(centered.every(d=>d<1),'Metric icons must be vertically centered: '+JSON.stringify(centered));checks.push('四张统计卡图标相对卡片的垂直中心误差均小于1像素');
  await click('.metric:nth-child(2)');assert.equal(await js('$("authors").rows.length'),3);await click('[data-filter=all]');
- await js(`document.querySelector('.metric:nth-child(3)').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}));true`);assert(await js('!$("updates").hidden'));await click('[data-page=overview]');
- assert(await js('!!window.productMotion&&document.getAnimations().some(a=>a.effect.getComputedTiming().duration===260)'));await pause(300);
+ await js(`document.querySelector('.metric:nth-child(3)').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}));true`);assert(await js('!$("updates").hidden'));
+ assert(await js(`document.querySelector('[data-page=overview]').click();!!window.productMotion&&document.getAnimations().some(a=>a.effect.getComputedTiming().duration===260)`));await pause(300);
  await click('#open-settings');assert(await js('$("monitor-settings").open'));main.webContents.sendInputEvent({type:'keyDown',keyCode:'ESC'});main.webContents.sendInputEvent({type:'keyUp',keyCode:'ESC'});await until(()=>js('!$("monitor-settings").open'),'Escape drawer');
  await click('#add-button');await js(`$('add-tab-link').focus();$('add-tab-link').dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowRight',bubbles:true}));true`);assert.equal(await js('$("add-tab-search").getAttribute("aria-selected")'),'true');await click('#cancel-add-author');
  checks.push('指标卡鼠标与键盘入口、页面过渡、抽屉Esc关闭和添加方式方向键切换已验证');
