@@ -43,7 +43,7 @@ function searchFromApi(response){
 class AuthorDiscovery{
  constructor(transport,{now=Date.now}={}){this.transport=transport;this.now=now;this.candidates=new Map();this.busy=false;this.nextSearch=0;}
  async serial(work){if(this.busy)throw Error('正在读取博主信息，请等待当前请求完成。');this.busy=true;try{return await work();}finally{this.busy=false;}}
- remember(profile,{source='link',notes=[]}={}){const key=randomUUID(),candidate={...profile,key,source,notes,expires:this.now()+10*60*1000,opened:false};this.candidates.set(key,candidate);for(const[k,v]of this.candidates)if(v.expires<this.now())this.candidates.delete(k);return this.public(candidate);}
+ remember(profile,{source='link',notes=[]}={}){const key=randomUUID(),candidate={...profile,key,source,notes,profileVerifiedAt:source==='link'?this.now():null,expires:this.now()+10*60*1000,opened:false};this.candidates.set(key,candidate);for(const[k,v]of this.candidates)if(v.expires<this.now())this.candidates.delete(k);return this.public(candidate);}
  public(c){return{key:c.key,id:c.id,name:c.name,avatar:c.avatar,url:c.url,description:c.description||'',source:c.source};}
  get(key){const c=this.candidates.get(String(key));if(!c||c.expires<this.now())throw Error('预览已过期，请重新读取博主。');return c;}
  async profile(input){
@@ -66,6 +66,6 @@ class AuthorDiscovery{
   return users.map(profile=>this.remember(profile,{source:'search'}));
  });}
  open(key,login){const c=this.get(key);login.openAuthor(c.url);c.opened=true;return this.public(c);}
- async confirm(key){const c=this.get(key);if(c.source==='search'&&!c.opened)throw Error('请先打开此博主主页，核对后再确认。');return this.serial(async()=>{const verified=await this.profile(c.url);return{...verified,key:c.key};});}
+ async confirm(key){const c=this.get(key);if(c.source==='search'&&!c.opened)throw Error('请先打开此博主主页，核对后再确认。');return this.serial(async()=>{this.transport.policy?.assertAllowed();const fresh=c.source==='link'&&c.profileVerifiedAt!==null&&this.now()-c.profileVerifiedAt<5*60000;const verified=fresh?this.public(c):await this.profile(c.url);return{...verified,key:c.key};});}
 }
 module.exports={AuthorDiscovery,normalizeUser,searchFromResponse,searchFromApi};

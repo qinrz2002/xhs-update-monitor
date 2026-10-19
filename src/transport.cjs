@@ -1,5 +1,7 @@
 'use strict';
 const { spawn } = require('node:child_process');
+const { setTimeout: delay } = require('node:timers/promises');
+const { RequestPolicy } = require('./request-policy.cjs');
 const ALLOWED = new Set(['www.xiaohongshu.com', 'xiaohongshu.com', 'xhslink.cn', 'xhslink.com', 'www.xhslink.com']);
 const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
 function checkedUrl(value) {
@@ -29,15 +31,26 @@ function parseResponse(raw) {
   return { ...output, body: rest };
 }
 class CurlTransport {
-  constructor({ cookies = async () => '', onSetCookies = async () => {} } = {}) { this.cookies = cookies; this.onSetCookies = onSetCookies; this.tail = Promise.resolve(); }
+  constructor({ cookies = async () => '', onSetCookies = async () => {}, policy = new RequestPolicy(), wait = (ms, signal) => delay(ms, undefined, { signal }) } = {}) { this.cookies = cookies; this.onSetCookies = onSetCookies; this.policy = policy; this.wait = wait; this.tail = Promise.resolve(); }
   searchUsers(keyword){return this.request(require('./user-search.cjs').SEARCH_API,{searchKeyword:keyword});}
-  async request(value, { signal, userAgent = USER_AGENT, searchKeyword } = {}) {
+  async request(value, { signal, userAgent = USER_AGENT, searchKeyword, verificationProbe = false } = {}) {
+    if (!(searchKeyword !== undefined && value === require('./user-search.cjs').SEARCH_API)) checkedUrl(value);
     const previous = this.tail; let release;
     this.tail = new Promise(resolve => { release = resolve; });
     await previous;
     try {
       if (signal?.aborted) throw new Error('请求已取消');
-      return await this.perform(value, { signal, userAgent, searchKeyword });
+      this.policy.assertAllowed({ verificationProbe });
+      const wait = this.policy.waitTime();
+      if (wait) await this.wait(wait, signal);
+      if (signal?.aborted) throw new Error('请求已取消');
+      const ticket = this.policy.begin(value, { verificationProbe });
+      let response;
+      try { response = await this.perform(value, { signal, userAgent, searchKeyword }); }
+      catch (error) { this.policy.finish(ticket, null, error); throw error; }
+      this.policy.finish(ticket, response);
+      if (!this.policy.state.blocked && ['www.xiaohongshu.com', 'edith.xiaohongshu.com'].includes(new URL(value).hostname) && response.headers['set-cookie']) await this.onSetCookies(value, response.headers['set-cookie']);
+      return response;
     } finally { release(); }
   }
   async perform(value, { signal, userAgent = USER_AGENT, searchKeyword } = {}) {
@@ -45,11 +58,14 @@ class CurlTransport {
     const url = api?new URL(value):checkedUrl(value);
     const cookie = api||url.hostname === 'www.xiaohongshu.com' ? await this.cookies(url.href) : '';
     const config = ['silent', 'show-error', 'compressed', 'max-time = 25', 'connect-timeout = 10', 'proto = "=https"', 'dump-header = "-"', 'url = ' + quote(url.href), 'user-agent = ' + quote(userAgent)];
+    config.push('header = ' + quote('Accept: ' + (api ? 'application/json' : 'text/html,application/xhtml+xml;q=0.9,*/*;q=0.8')), 'header = ' + quote('Accept-Language: zh-CN,zh;q=0.9'));
     if (cookie) config.push('header = ' + quote('Cookie: ' + cookie));
     if(api){const signed=require('./user-search.cjs').signedSearch(searchKeyword,cookie,userAgent);for(const[k,v]of Object.entries(signed.headers))config.push('header = '+quote(k+': '+v));config.push('data-binary = '+quote(signed.body));}
     const response = await new Promise((resolve, reject) => {
       const executable = process.env.SystemRoot ? require('node:path').join(process.env.SystemRoot, 'System32', 'curl.exe') : 'curl.exe';
-      const child = spawn(executable, ['--config', '-'], { windowsHide: true, shell: false, stdio: ['pipe', 'pipe', 'pipe'] });
+      // Ignore a machine/user curlrc: hidden retries or redirects would escape
+      // the per-attempt budget and could send more requests than the queue records.
+      const child = spawn(executable, ['-q', '--config', '-'], { windowsHide: true, shell: false, stdio: ['pipe', 'pipe', 'pipe'] });
       let raw = '', size = 0, finished = false;
       const end = (error, result) => { if (finished) return; finished = true; clearTimeout(timer); signal?.removeEventListener('abort', abort); error ? reject(error) : resolve(result); };
       const abort = () => { child.kill(); end(Object.assign(new Error('请求已取消'), { code: 'ABORTED' })); };
@@ -62,7 +78,6 @@ class CurlTransport {
       if (signal?.aborted) return abort();
       child.stdin.end(config.join('\n') + '\n');
     });
-    if ((api||url.hostname === 'www.xiaohongshu.com') && response.headers['set-cookie']) await this.onSetCookies(url.href, response.headers['set-cookie']);
     return response;
   }
   async resolve(input, signal) {

@@ -78,5 +78,6 @@ docs/*
 !docs/images/
 !docs/RELEASE_NOTES.md
 !docs/releases.json
+!docs/REQUEST_POLICY.md
 使用与数据目录说明.md
 建设方案补充-主页源码及界面调整.md

@@ -124,7 +124,11 @@ class LoginSession extends EventEmitter {
       }
       if (invalidDomain) continue;
       if (maxAge !== undefined) cookie.expirationDate = Date.now()/1000 + maxAge;
-      try { await this.session.cookies.set(cookie); changed = true; } catch {}
+      // A cookie rotated by an already-completed curl response must not enqueue
+      // another login probe. Browser login still uses capture() normally.
+      const priorSession = this.lastSession;
+      if (cookie.name === 'web_session') this.lastSession = cookie.value;
+      try { await this.session.cookies.set(cookie); changed = true; } catch { this.lastSession = priorSession; }
     }
     if (changed) await this.persist();
   }

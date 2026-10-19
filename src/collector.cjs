@@ -92,8 +92,8 @@ function parseProfile(response, userId) {
 }
 class Collector {
   constructor(transport) { this.transport = transport; }
-  async collect(monitor, signal) {
-    const response = await this.transport.request(monitor.url, { signal });
+  async collect(monitor, signal, options = {}) {
+    const response = await this.transport.request(monitor.url, { ...options, signal });
     const result = parseProfile(response, monitor.id);
     // Homepage-source mode: a complete chronological first window can seed a
     // recent baseline, after Store independently verifies IDs across samples.

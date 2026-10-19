@@ -5,7 +5,7 @@ const { randomDelay, interval } = require('./store.cjs');
 class Scheduler extends EventEmitter {
   constructor(store, collector, { now = Date.now, random = Math.random, minimumGapMs = 10000 } = {}) {
     super(); this.store = store; this.collector = collector; this.now = now; this.random = random; this.minimumGapMs = minimumGapMs;
-    this.queue = []; this.active = null; this.nextGlobal = 0; this.sessionBlocked = Boolean(store.state.accessBlock); this.lastTick = this.now(); this.timer = null;
+    this.queue = []; this.active = null; this.nextGlobal = store.state.requestPolicy?.cooldownUntil || 0; this.sessionBlocked = Boolean(store.state.accessBlock || store.state.requestPolicy?.blocked); this.lastTick = this.now(); this.timer = null;
     this.reschedule();
   }
   changed() { this.emit('change'); }
@@ -95,7 +95,7 @@ class Scheduler extends EventEmitter {
       if (['account_restricted', 'client_restricted'].includes(result.status)) { this.blockSession(result.status); this.emit('account-restricted', result.status); }
       const current = this.store.state.monitors.find(n => n.id === m.id);
       if (result.status === 'rate_limited') {
-        const wait = Math.max(60, result.retryAfter || 600) * 1000;
+        const wait = Math.max(1800, result.retryAfter || 0) * 1000 + Math.floor(this.random() * 600001);
         this.nextGlobal = this.now() + wait;
         for (const item of this.store.state.monitors) if (item.enabled) item.nextDue = Math.max(item.nextDue || 0, this.nextGlobal);
       } else if (current && !result.usable && current.failures > 0) {
@@ -105,6 +105,15 @@ class Scheduler extends EventEmitter {
       this.store.commit();
       if (applied.events?.length) this.emit('new-updates', applied.events);
     } catch (error) {
+      if (error.code === 'REQUEST_POLICY' && !controller.signal.aborted) {
+        if (error.status === 'rate_limited') {
+          this.nextGlobal = Math.max(this.nextGlobal, this.now() + error.retryAfter * 1000);
+          for (const item of this.store.state.monitors) if (item.enabled) item.nextDue = Math.max(item.nextDue || 0, this.nextGlobal);
+          const current = this.store.state.monitors.find(n => n.id === m.id && n.generation === generation);
+          if (current) { current.status = 'rate_limited'; current.message = error.message; }
+        } else { this.blockSession(error.status); }
+        this.store.commit(); return;
+      }
       if (!controller.signal.aborted) this.store[job.profileRefresh ? 'applyProfile' : 'applyResult'](m.id, generation, { status: 'network_error', usable: false, message: '网络请求失败，已保留最近成功数据。' });
       const current = this.store.state.monitors.find(n => n.id === m.id && n.generation === generation);
       if (!controller.signal.aborted && current) {
@@ -117,7 +126,8 @@ class Scheduler extends EventEmitter {
       if (controller.signal.aborted && current?.status === 'checking') {
         current.status = 'pending'; current.message = '本次检测已取消，保留最近成功结果。'; this.store.commit();
       }
-      this.active = null; this.nextGlobal = Math.max(this.nextGlobal, this.now() + this.minimumGapMs); this.changed();
+      const gap = this.minimumGapMs ? this.minimumGapMs + Math.floor(this.random() * this.minimumGapMs) : 0;
+      this.active = null; this.nextGlobal = Math.max(this.nextGlobal, this.store.state.requestPolicy?.cooldownUntil || 0, this.now() + gap); this.changed();
     }
   }
 }

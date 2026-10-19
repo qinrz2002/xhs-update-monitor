@@ -71,6 +71,13 @@ test('Set-Cookie rejects foreign domains and insecure origins; max-age overrides
   assert(f.jar.values[0].expirationDate>Date.now()/1000+55);
   assert.equal(f.session.isXhs(undefined),false);
 });
+test('curl session rotation persists without triggering an extra login request; browser login still captures',async t=>{
+ const f=fixture(t,[cookie('synthetic-before')]);f.session.lastSession='synthetic-before';f.session.state='logged_in';let candidates=0;f.session.on('candidate',()=>candidates++);
+ await f.session.setCookies('https://www.xiaohongshu.com/user/profile/test',['web_session=synthetic-rotated; Domain=.xiaohongshu.com; Path=/; Secure; HttpOnly']);
+ await new Promise(setImmediate);assert.equal(candidates,0);assert.equal(f.session.lastSession,'synthetic-rotated');assert.equal(f.session.state,'logged_in');
+ assert(JSON.parse(fs.readFileSync(path.join(f.dir,'session.enc'),'utf8')).cookies.some(c=>c.value==='synthetic-rotated'));
+ await f.jar.set(cookie('synthetic-browser-login'));await new Promise(setImmediate);await f.session.persistTail;assert.equal(candidates,1);assert.equal(f.session.state,'verifying');
+});
 class LoginWindow extends EventEmitter {
   constructor(){super();this.destroyed=false;this.url='https://www.xiaohongshu.com/login';this.webContents=new EventEmitter();this.webContents.getURL=()=>this.url;this.webContents.setWindowOpenHandler=()=>{};}
   isDestroyed(){return this.destroyed;}focus(){}loadURL(url){this.url=url;return Promise.resolve();}

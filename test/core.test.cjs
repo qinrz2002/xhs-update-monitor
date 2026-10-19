@@ -66,7 +66,7 @@ test('reschedule uses current time and updated interval; paused stays off',t=>{
  now=1e8;q.reschedule();assert.equal(s.state.monitors[0].nextDue,now+1200000);q.pause(ID,false);q.reschedule();assert.equal(s.state.monitors[0].nextDue,null);
 });
 test('rate limit defers global work and server retry wins',async t=>{
- const s=setup(t);s.add(identity(ID));s.add(identity(ID2));let now=1000;const q=new Scheduler(s,{collect:async()=>({usable:false,status:'rate_limited',retryAfter:1200})},{now:()=>now,minimumGapMs:0});q.enqueue(ID);await q.runNext();assert.equal(q.nextGlobal,1201000);assert.ok(s.state.monitors.every(m=>m.nextDue>=1201000));
+ const s=setup(t);s.add(identity(ID));s.add(identity(ID2));let now=1000;const q=new Scheduler(s,{collect:async()=>({usable:false,status:'rate_limited',retryAfter:7200})},{now:()=>now,random:()=>0.5,minimumGapMs:0});q.enqueue(ID);await q.runNext();assert.equal(q.nextGlobal,7501000);assert.ok(s.state.monitors.every(m=>m.nextDue>=7501000));
 });
 test('session failure blocks queued work; network errors preserve data',async t=>{
  const s=setup(t);s.add(identity(ID));s.add(identity(ID2));const q=new Scheduler(s,{collect:async()=>({usable:false,status:'login_required'})},{minimumGapMs:0});q.enqueue(ID);q.enqueue(ID2);await q.runNext();assert.equal(q.sessionBlocked,true);assert.equal(q.queue.length,0);assert.equal(q.enqueue(ID),false);q.unblock();assert.equal(q.sessionBlocked,false);

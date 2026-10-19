@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { Store } = require('./store.cjs');
 const { CurlTransport } = require('./transport.cjs');
+const { RequestPolicy } = require('./request-policy.cjs');
 const { Collector, httpSessionVerified, stateFromHtml, parseProfile } = require('./collector.cjs');
 const { accountFromState } = require('./account.cjs');
 const { Scheduler } = require('./scheduler.cjs');
@@ -83,14 +84,23 @@ function notifyNative() {
   if (!store.state.config.notifications) { notifier?.clear(); return; }
   notifier?.show([...store.pending(), ...testEvents]);
 }
-async function verifyLogin({ explicit = false } = {}) {
+let verificationJob = null;
+function verifyLogin({ explicit = false } = {}) {
+  const reason = store.state.accessBlock?.reason || transport.policy.state.blocked;
+  // Cookie changes/startup must never probe an account that was stopped by a restriction.
+  if (!explicit && (reason || Date.now() - (transport.policy.state.lastVerificationAt || 0) < 5 * 60000)) return Promise.resolve();
+  if (verificationJob) return verificationJob;
+  verificationJob = performVerification({ explicit }).finally(() => { verificationJob = null; });
+  return verificationJob;
+}
+async function performVerification({ explicit = false } = {}) {
   const token = ++syncToken;
   const m = store.state.monitors[0];
   try {
     let result;
-    if (m) result = await new Collector(transport).collect(m);
+    if (m) result = await new Collector(transport).collect(m, undefined, { verificationProbe: explicit });
     else {
-      const response = await transport.request('https://www.xiaohongshu.com/explore');
+      const response = await transport.request('https://www.xiaohongshu.com/explore', { verificationProbe: explicit });
       let account; try { if (response.status === 200) account = accountFromState(stateFromHtml(response.body)); } catch {}
       result = account ? { status: 'account_verified', account } : parseProfile(response, '');
     }
@@ -99,13 +109,17 @@ async function verifyLogin({ explicit = false } = {}) {
       login.setAccount(result.account);
       const reason = store.state.accessBlock?.reason;
       if (!explicit && ['account_restricted','client_restricted'].includes(reason)) { login.setState(reason); return; }
+      transport.policy.state.lastVerificationAt = Date.now(); transport.policy.clearBlock();
       login.verified(); scheduler.unblock();
     }
-    else if (result.status === 'login_required') { scheduler.blockSession(); login.invalid(); if (store.state.config.autoLogin) login.open({ automatic: true }); }
+    else if (result.status === 'login_required') { scheduler.blockSession(); login.invalid(); }
     else if (result.status === 'verification_required') { scheduler.blockSession('verification_required'); login.setState('verification_required'); }
     else if (['account_restricted','client_restricted'].includes(result.status)) { scheduler.blockSession(result.status); login.setState(result.status); }
     else login.setState('http_not_verified');
-  } catch { if (token === syncToken) login.setState('network_error'); }
+  } catch (error) {
+    if (token === syncToken && error.code !== 'REQUEST_POLICY') login.setState('network_error');
+    if (explicit && error.code === 'REQUEST_POLICY') throw error;
+  }
 }
 function checkSender(event) {
   const sender = event.sender;
@@ -215,7 +229,18 @@ else {
     login = new LoginSession(e, DATA);
     login.setAccount(store.state.account);
     login.on('account', account => { store.state.account = account; store.commit(); broadcast(); });
-    transport = new CurlTransport({ cookies: url => login.cookieHeader(url), onSetCookies: (url, lines) => login.setCookies(url, lines) });
+    store.state.requestPolicy ||= {};
+    if (store.state.accessBlock) store.state.requestPolicy.blocked = store.state.accessBlock.reason;
+    const requestPolicy = new RequestPolicy({ state: store.state.requestPolicy, save: () => store.commit(),
+      audit: entry => {
+        const directory = path.join(DATA, 'logs'); fs.mkdirSync(directory, { recursive: true });
+        const file = path.join(directory, 'curl-requests.jsonl');
+        if (fs.existsSync(file) && fs.statSync(file).size > 1024 * 1024) fs.renameSync(file, file + '.previous');
+        fs.appendFileSync(file, JSON.stringify(entry) + '\n');
+      },
+      onRestriction: reason => { scheduler?.blockSession(reason); if (reason === 'login_required') login.invalid(); else login.setState(reason); }
+    });
+    transport = new CurlTransport({ policy: requestPolicy, cookies: url => login.cookieHeader(url), onSetCookies: (url, lines) => login.setCookies(url, lines) });
     discovery = new AuthorDiscovery(transport);
     scheduler = new Scheduler(store, new Collector(transport));
     notifier = new NativeNotifier(e.Notification, {
@@ -227,7 +252,7 @@ else {
     scheduler.reschedule();
     scheduler.on('change', broadcast);
     scheduler.on('new-updates', () => { syncAlarm(); notifyNative(); });
-    scheduler.on('login-required', () => { login.invalid(); if (store.state.config.autoLogin) login.open({ automatic: true }); });
+    scheduler.on('login-required', () => login.invalid());
     scheduler.on('verification-required', () => login.setState('verification_required'));
     scheduler.on('account-restricted', status => login.setState(status));
     scheduler.on('account', account => login.setAccount(account));
@@ -250,8 +275,8 @@ else {
     if(activationPending)activateExisting();
     e.powerMonitor.on('resume', () => scheduler.reschedule());
     syncAlarm(); notifyNative();
-    if (login.state === 'unverified') void verifyLogin();
-    else if (login.state === 'not_logged_in' && store.state.config.autoLogin) {
+    if (login.state === 'unverified' && !scheduler.sessionBlocked) void verifyLogin();
+    else if (login.state === 'not_logged_in' && store.state.config.autoLogin && !scheduler.sessionBlocked) {
       scheduler.blockSession(); login.open({ automatic: true });
       recordStartup('automatic-login-opened', { hasWindow: Boolean(login.window && !login.window.isDestroyed()) });
     }
