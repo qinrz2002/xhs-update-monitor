@@ -10,21 +10,35 @@ const { accountFromState } = require('./account.cjs');
 const { Scheduler } = require('./scheduler.cjs');
 const { LoginSession } = require('./session.cjs');
 const { NativeNotifier } = require('./notifier.cjs');
+const { notificationIdentity, repairNotificationRegistration } = require('./notification-registration.cjs');
+const { NotificationActivation } = require('./notification-activation.cjs');
 const { Updates, REPOSITORY } = require('./updater.cjs');
 const { AuthorDiscovery } = require('./author-discovery.cjs');
 const { createMenu } = require('./menu.cjs');
 const { instancePaths, bindDataLocation, restoreWindow, acquireSharedInstance, runningLegacyInstance, launchActivation } = require('./instance.cjs');
 const ROOT = path.join(__dirname, '..');
-e.app.setAppUserModelId('Local.XhsUpdateMonitor');
+const nativeIdentity = notificationIdentity({ packaged: e.app.isPackaged, root: ROOT });
+e.app.setAppUserModelId(nativeIdentity.appId);
+e.app.setToastActivatorCLSID(nativeIdentity.clsid);
 if(process.argv.includes('--xhs-activate-legacy')){
   const legacyProfile=path.join(ROOT,'data','desktop-profile');fs.mkdirSync(legacyProfile,{recursive:true});e.app.setPath('userData',legacyProfile);
   if(e.app.requestSingleInstanceLock()){e.app.releaseSingleInstanceLock();launchActivation(process.execPath,['--xhs-skip-legacy-forward']);}
   e.app.exit(0);
 }
 const { data: DATA, profile: PROFILE, pipe: INSTANCE_PIPE, locator: DATA_LOCATOR } = instancePaths(e.app, e.app.isPackaged ? path.dirname(process.execPath) : ROOT);
-e.app.setAppUserModelId('Local.XhsUpdateMonitor');
+e.app.setName(nativeIdentity.name);
 let mainWindow, alarmWindow, tray, store, login, scheduler, transport, notifier, updates, quitting = false, testEvents = [], syncToken = 0;
 let notificationStatus = 'not_yet_shown', activationPending = false, mainReady = false, instanceServer, discovery;
+let nativeReady = false, rendererReady = false, pendingNavigation = null;
+const notificationActivation = new NotificationActivation({
+  read: () => store?.state.notificationRoutes || {},
+  save: routes => { store.state.notificationRoutes = routes; store.commit(); },
+  view: () => openUpdates(), acknowledge: ids => acknowledge(ids),
+  observed: event => recordStartup('native-notification-' + event)
+});
+function supportsNativeNotifications() { return nativeReady && e.Notification.isSupported(); }
+function flushNavigation() { if (pendingNavigation && mainReady && rendererReady && mainWindow && !mainWindow.isDestroyed()) { mainWindow.webContents.send('monitor:navigate', pendingNavigation); pendingNavigation = null; } }
+function openUpdates() { pendingNavigation = 'updates'; openMain(); flushNavigation(); }
 function recordStartup(event, details = {}) {
   const directory = !e.app.isPackaged && process.env.XHS_MONITOR_DATA ? path.join(ROOT, 'evidence') : path.join(DATA, 'logs');
   fs.mkdirSync(directory, { recursive: true });
@@ -32,7 +46,7 @@ function recordStartup(event, details = {}) {
 }
 function state() {
   const snapshot = store.snapshot();
-  return { ...snapshot, appVersion:require('../package.json').version, softwareUpdate:updates?.snapshot(), login: login.state, account: login.account, sessionBlocked: scheduler.sessionBlocked, queued: scheduler.queue.map(j => j.id), active: scheduler.active?.id || null, pending: [...store.pending(), ...testEvents], notificationSupported: e.Notification.isSupported(), notificationStatus, dataDirectory: DATA };
+  return { ...snapshot, appVersion:require('../package.json').version, softwareUpdate:updates?.snapshot(), login: login.state, account: login.account, sessionBlocked: scheduler.sessionBlocked, queued: scheduler.queue.map(j => j.id), active: scheduler.active?.id || null, pending: [...store.pending(), ...testEvents], notificationSupported: supportsNativeNotifications(), notificationStatus, dataDirectory: DATA };
 }
 function broadcast() {
   if (!store || !login || !scheduler) return;
@@ -47,14 +61,14 @@ function localWindow(options) {
 }
 function openMain() {
   if(mainWindow&&!mainWindow.isDestroyed()){if(mainReady)restoreWindow(mainWindow);else activationPending=true;return;}
-  mainReady=false;
+  mainReady=false;rendererReady=false;
   mainWindow = localWindow({ title: '小红书更新监控', width: 1480, height: 960, minWidth: 1040, minHeight: 720, show: false, backgroundColor: store.state.config.theme === 'dark' ? '#10151c' : '#f5f7fa', autoHideMenuBar: true });
   recordStartup('main-window-created', { windowId: mainWindow.id });
   mainWindow.loadFile(path.join(ROOT, 'ui', 'index.html'));
   mainWindow.webContents.once('did-finish-load', () => recordStartup('main-document-loaded'));
   mainWindow.webContents.on('preload-error', () => recordStartup('preload-error'));
   mainWindow.webContents.on('render-process-gone', (_event, details) => recordStartup('renderer-exit', { reason: details.reason }));
-  mainWindow.once('ready-to-show', () => { mainReady=true; mainWindow.show(); broadcast();if(activationPending)activateExisting(); });
+  mainWindow.once('ready-to-show', () => { mainReady=true; mainWindow.show(); broadcast();flushNavigation();if(activationPending)activateExisting(); });
   mainWindow.on('close', event => { if (!quitting) { event.preventDefault(); mainWindow.hide(); } });
 }
 function activateExisting(){
@@ -135,6 +149,7 @@ e.ipcMain.handle('monitor:command', async (event, action, value) => {
       case 'ui-ready': {
         if (!value || !['light','dark'].includes(value.theme) || typeof value.visible !== 'boolean') throw new Error('界面就绪信息无效。');
         recordStartup('renderer-theme-applied', { window: event.sender === mainWindow?.webContents ? 'main' : 'alarm', theme: value.theme, visible: value.visible, matchesSavedTheme: value.theme === store.state.config.theme });
+        if (event.sender === mainWindow?.webContents) { rendererReady = true; flushNavigation(); }
         return { ok: true };
       }
       case 'add': {
@@ -184,7 +199,7 @@ e.ipcMain.handle('monitor:command', async (event, action, value) => {
       case 'verify': await verifyLogin({ explicit: true }); break;
       case 'ack': acknowledge(Array.isArray(value) ? value.slice(0, 10000) : []); break;
       case 'read': for (const u of store.state.updates) if (value === 'all' || u.eventId === value) u.read = true; store.commit(); break;
-      case 'view': openMain(); mainWindow.webContents.send('monitor:navigate', 'updates'); break;
+      case 'view': openUpdates(); break;
       case 'open-note': {
         const item = store.state.updates.find(u => u.eventId === value) || store.state.monitors.flatMap(m => m.notes).find(n => n.id === value);
         if (!item?.url) throw new Error('尚未取得可用笔记链接。');
@@ -222,6 +237,24 @@ else {
     recordStartup('primary-instance-acquired',{pid:process.pid,profile:PROFILE,sharedChannel:true});
     await e.app.whenReady();
     store = new Store(DATA);
+    try {
+      if (nativeIdentity.native && !nativeIdentity.production) {
+        const helper = __dirname.includes('app.asar') ? path.join(process.resourcesPath, 'app.asar.unpacked', 'src', 'notification-history.exe') : path.join(__dirname, 'notification-history.exe');
+        const verified = require('node:child_process').spawnSync(helper, ['--verify-host', process.execPath, nativeIdentity.name], { windowsHide: true, timeout: 10000 });
+        if (verified.status !== 0) throw Error('测试宿主的Windows产品名称未隔离，禁止注册系统通知。');
+      }
+      const registration = repairNotificationRegistration({ app: e.app, shell: e.shell, identity: nativeIdentity, preferredClsid: store.state.notificationActivatorClsid });
+      nativeReady = registration.enabled;
+      if (nativeReady) { store.state.notificationActivatorClsid = nativeIdentity.clsid; store.commit(); }
+      if (nativeReady) e.Notification.handleActivation(details => notificationActivation.handle(details));
+      recordStartup('native-notification-registration', registration);
+    } catch (error) { nativeReady = false; recordStartup('native-notification-registration-failed', { message: error.message }); }
+    if (nativeReady && store.state.notificationRegistrationVersion !== 1) {
+      const helper = __dirname.includes('app.asar') ? path.join(process.resourcesPath, 'app.asar.unpacked', 'src', 'notification-history.exe') : path.join(__dirname, 'notification-history.exe');
+      const cleared = require('node:child_process').spawnSync(helper, [nativeIdentity.appId], { windowsHide: true, encoding: 'utf8', timeout: 10000 });
+      if (cleared.status === 0) { store.state.notificationRegistrationVersion = 1; store.commit(); recordStartup('native-notification-history-migrated'); }
+      else { nativeReady = false; notificationStatus = 'failed'; recordStartup('native-notification-registration-failed', { message: '遗留系统通知尚未清理，未发送新系统通知。' }); }
+    }
     const installed=e.app.isPackaged&&fs.existsSync(path.join(path.dirname(process.execPath),'Uninstall 小红书更新监控.exe'));
     updates = new Updates({app:e.app,engine:require('electron-updater').autoUpdater,installed,enabled:store.state.config.automaticUpdates!==false,beforeInstall:()=>{quitting=true;scheduler?.stop();store.commit();}});
     updates.on('change',broadcast);updates.start();
@@ -245,7 +278,9 @@ else {
     scheduler = new Scheduler(store, new Collector(transport));
     notifier = new NativeNotifier(e.Notification, {
       acknowledge,
-      view: () => { openMain(); mainWindow.webContents.send('monitor:navigate', 'updates'); },
+      view: openUpdates,
+      enabled: nativeReady,
+      activation: nativeReady ? notificationActivation : null,
       observed: (event, reason) => { recordStartup('native-notification-' + event, reason ? { reason } : {}); if (event === 'shown' || event === 'failed') { notificationStatus = event; broadcast(); } },
     });
     if (!store.state.monitors.length && !store.state.archive.length) store.add({ id: '5e314c060000000001004e26', name: '胡图图', url: 'https://www.xiaohongshu.com/user/profile/5e314c060000000001004e26' });
@@ -269,12 +304,12 @@ else {
       { type: 'separator' }, { label: '退出应用', click: () => { quitting = true; e.app.quit(); } },
     ]));
     tray.on('double-click', openMain);
-    recordStartup('tray-created', { notificationSupported: e.Notification.isSupported(), sandbox: true, contextIsolation: true });
+    recordStartup('tray-created', { notificationSupported: supportsNativeNotifications(), sandbox: true, contextIsolation: true });
     e.Menu.setApplicationMenu(createMenu(e,{openMain,quit:()=>{quitting=true;e.app.quit();},navigate:page=>{openMain();mainWindow.webContents.send('monitor:navigate',page);}}));
     scheduler.startTimer(); openMain();
     if(activationPending)activateExisting();
     e.powerMonitor.on('resume', () => scheduler.reschedule());
-    syncAlarm(); notifyNative();
+    notificationActivation.start(); syncAlarm(); notifyNative();
     if (login.state === 'unverified' && !scheduler.sessionBlocked) void verifyLogin();
     else if (login.state === 'not_logged_in' && store.state.config.autoLogin && !scheduler.sessionBlocked) {
       scheduler.blockSession(); login.open({ automatic: true });

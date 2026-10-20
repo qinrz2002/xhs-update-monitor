@@ -72,6 +72,9 @@ scripts/*
 !scripts/publish-release.cjs
 !scripts/verify-product-ui.cjs
 !scripts/verify-product-ui-child.cjs
+!scripts/compile-notification-helper.cjs
+!scripts/NotificationHistory.cs
+src/notification-history.exe
 
 # Keep local working notes out of the public repository.
 docs/*

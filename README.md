@@ -4,7 +4,7 @@
 
 一个运行在 Windows 上的小红书多博主更新监控面板。添加你关注的博主主页，设置检测间隔，发现新笔记后用弹窗和提示音提醒，减少反复打开主页查看的操作。
 
-**当前版本：v1.1.2。** 前往 [GitHub Releases](https://github.com/qinrz2002/xhs-update-monitor/releases/latest) 下载 Windows 安装包。每次更新内容与北京时间记录在 [更新日志](CHANGELOG.md)。
+**当前版本：v1.1.3。** 前往 [GitHub Releases](https://github.com/qinrz2002/xhs-update-monitor/releases/latest) 下载 Windows 安装包。每次更新内容与北京时间记录在 [更新日志](CHANGELOG.md)。
 
 **免责声明：本项目仅供学习与技术研究，请勿用于任何非法用途。** 使用时请遵守适用法律法规及平台规则，尊重他人隐私与合法权益。完整说明见 [免责声明](DISCLAIMER.md)。
 
@@ -94,3 +94,5 @@ pnpm start
 2. 运行 `node scripts/release-notes.cjs` 生成更新日志和发布说明，执行测试并提交到 main。
 3. 推送同名版本标签（例如 `v1.1.0`），GitHub Actions 会校验更新内容、构建并发布正式版本。
 4. 正式发布后，流程以 GitHub 的实际 `published_at` 自动填写 Release 说明、`CHANGELOG.md` 与版本记录，统一显示北京时间，保留历史版本记录。
+
+Windows 通知会在正式版启动时核验启动注册；点击进入更新记录，关闭提醒仅确认该通知包含的记录。升级至 v1.1.3 后会刷新遗留的系统通知，本地更新记录保留。开发与隔离测试默认不注册系统通知，避免覆盖正式版。
