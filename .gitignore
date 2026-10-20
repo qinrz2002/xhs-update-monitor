@@ -64,6 +64,7 @@ scripts/*
 !scripts/generate-modern-blockmap.cjs
 !scripts/native-installer-references.cjs
 !scripts/verify-installer-ui.cjs
+!scripts/verify-update-install.cjs
 !scripts/verify-nsis-progress.cjs
 !scripts/verify-modern-forwarding.cjs
 !scripts/verify-modern-package.cjs

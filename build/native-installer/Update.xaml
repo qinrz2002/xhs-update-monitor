@@ -1,0 +1,41 @@
+<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="小红书更新监控 · 正在更新" Width="520" Height="316"
+        WindowStyle="None" ResizeMode="NoResize" AllowsTransparency="True"
+        Background="Transparent" WindowStartupLocation="CenterScreen"
+        FontFamily="Microsoft YaHei UI" UseLayoutRounding="True">
+  <Border CornerRadius="20" BorderBrush="#30394A" BorderThickness="1" Padding="30" Background="#171C27">
+    <Grid>
+      <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+      <Grid>
+        <Grid.ColumnDefinitions><ColumnDefinition Width="50"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+        <Border x:Name="UpdateSpinnerSurface" Width="42" Height="42" CornerRadius="13" Background="#382633" HorizontalAlignment="Left">
+          <Path x:Name="UpdateSpinner" Data="M28,16 A12,12 0 1 1 16,4" Width="32" Height="32" Stretch="None" UseLayoutRounding="False" Stroke="#F56B83" StrokeThickness="2.5" StrokeStartLineCap="Round" StrokeEndLineCap="Round" HorizontalAlignment="Center" VerticalAlignment="Center" RenderTransformOrigin="0.5,0.5">
+            <Path.RenderTransform><RotateTransform/></Path.RenderTransform>
+          </Path>
+        </Border>
+        <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="8,0,0,0">
+          <TextBlock x:Name="UpdateTitle" Text="正在安装新版本" FontSize="20" FontWeight="SemiBold" Foreground="#F2F6FD"/>
+          <TextBlock x:Name="UpdateVersion" Margin="0,5,0,0" FontSize="11" Foreground="#96A3B7"/>
+        </StackPanel>
+      </Grid>
+      <StackPanel Grid.Row="1" VerticalAlignment="Center">
+        <Grid Margin="0,20,0,12"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="42"/></Grid.ColumnDefinitions>
+          <TextBlock x:Name="UpdateStatus" Text="正在准备安装文件…" FontSize="12" Foreground="#D6DEEA" TextWrapping="Wrap" Margin="0,0,12,0"/>
+          <TextBlock x:Name="UpdatePercent" Grid.Column="1" Text="0%" TextAlignment="Right" FontSize="12" Foreground="#F56B83"/>
+        </Grid>
+        <Grid Height="5" ClipToBounds="True">
+          <Border CornerRadius="2.5" Background="#2B3547"/>
+          <Border x:Name="UpdateFill" CornerRadius="2.5" Background="#F04462" HorizontalAlignment="Left" Width="0"/>
+        </Grid>
+      </StackPanel>
+      <TextBlock x:Name="UpdateHint" Grid.Row="2" Text="完成后会自动打开新版，请稍候。" FontSize="12" Foreground="#96A3B7" TextWrapping="Wrap"/>
+      <Grid Grid.Row="3" Margin="0,16,0,0">
+        <TextBlock Text="监控记录、设置和登录信息会保留。" FontSize="10" Foreground="#708095" VerticalAlignment="Center"/>
+        <Button x:Name="UpdateClose" Visibility="Collapsed" Content="关闭" Width="72" Height="30" HorizontalAlignment="Right" Background="#303A4A" Foreground="#F2F6FD" BorderThickness="0" Cursor="Hand">
+          <Button.Template><ControlTemplate TargetType="Button"><Border x:Name="CloseSurface" Background="{TemplateBinding Background}" CornerRadius="8"><ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/></Border><ControlTemplate.Triggers><Trigger Property="IsMouseOver" Value="True"><Setter TargetName="CloseSurface" Property="Opacity" Value="0.8"/></Trigger><Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="CloseSurface" Property="BorderBrush" Value="#96A3B7"/><Setter TargetName="CloseSurface" Property="BorderThickness" Value="1"/></Trigger></ControlTemplate.Triggers></ControlTemplate></Button.Template>
+        </Button>
+      </Grid>
+    </Grid>
+  </Border>
+</Window>

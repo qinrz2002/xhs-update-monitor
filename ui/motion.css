@@ -38,3 +38,7 @@ dialog.settings-drawer[open]{transform:translateX(0)}
  *,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}
  .metric[role=button]:hover{transform:none}
 }
+#software-update-dialog.is-installing .software-update-prompt-icon{font-size:0}
+#software-update-dialog.is-installing .software-update-prompt-icon::after{content:'';width:22px;height:22px;border:2px solid var(--accent);border-right-color:transparent;border-radius:50%;animation:update-install-spin 1s linear infinite}
+@keyframes update-install-spin{to{transform:rotate(360deg)}}
+@media(prefers-reduced-motion:reduce){#software-update-dialog.is-installing .software-update-prompt-icon::after{animation:none}}

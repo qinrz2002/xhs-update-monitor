@@ -17,14 +17,21 @@ async function fetchRelease(version){
 class Updates extends EventEmitter {
  constructor({app,engine,installed,enabled=true,beforeInstall=()=>{},now=()=>new Date().toISOString(),getRelease=fetchRelease}){
   super();Object.assign(this,{app,engine,installed,enabled,beforeInstall,now,getRelease});this.releaseRequests=new Map();
-  this.value={status:installed?'idle':'installer_required',version:app.getVersion(),latest:null,percent:0,checkedAt:null,repository:REPOSITORY,automatic:enabled,installed,releaseNotes:'',publishedAt:null,releaseInfoStatus:'idle'};
+  this.value={status:installed?'idle':'installer_required',version:app.getVersion(),latest:null,percent:0,downloadPhase:'idle',checkedAt:null,repository:REPOSITORY,automatic:enabled,installed,releaseNotes:'',publishedAt:null,releaseInfoStatus:'idle'};
   engine.autoDownload=true;engine.autoInstallOnAppQuit=false;engine.allowPrerelease=false;engine.allowDowngrade=false;
+  // The published WPF wrapper and NSIS's cached inner installer have different bytes.
+  // Differential reconstruction would fail its digest and then repeat the download in full.
+  engine.disableDifferentialDownload=true;
   engine.setFeedURL({provider:'github',owner:'qinrz2002',repo:'xhs-update-monitor',private:false});
-  engine.on('checking-for-update',()=>this.set({status:'checking',error:null,percent:0}));
-  engine.on('update-available',info=>{this.set({status:'available',...this.captureInfo(info),error:null});void this.loadReleaseInfo(info.version);});
+  engine.on('checking-for-update',()=>this.set({status:'checking',error:null,percent:0,downloadPhase:'idle'}));
+  engine.on('update-available',info=>{this.set({status:'available',...this.captureInfo(info),error:null,percent:0,downloadPhase:'downloading'});void this.loadReleaseInfo(info.version);});
   engine.on('update-not-available',info=>{this.set({status:'current',...this.captureInfo(info),checkedAt:now(),error:null});if(info.version)void this.loadReleaseInfo(info.version);});
-  engine.on('download-progress',p=>this.set({status:'downloading',percent:Math.max(0,Math.min(100,Number(p.percent)||0))}));
-  engine.on('update-downloaded',info=>{this.set({status:'ready',...this.captureInfo(info),percent:100,checkedAt:now(),error:null});void this.loadReleaseInfo(info.version);});
+  engine.on('download-progress',p=>{
+   if(!['available','downloading'].includes(this.value.status))return;
+   const percent=Math.max(0,Math.min(100,Number(p.percent)||0));
+   this.set({status:'downloading',percent:Math.min(99,percent),downloadPhase:percent>=100?'verifying':'downloading'});
+  });
+  engine.on('update-downloaded',info=>{this.set({status:'ready',...this.captureInfo(info),percent:100,downloadPhase:'complete',checkedAt:now(),error:null});void this.loadReleaseInfo(info.version);});
   engine.on('error',error=>this.failed(error));
  }
  snapshot(){return {...this.value,automatic:this.enabled};}
@@ -40,13 +47,13 @@ class Updates extends EventEmitter {
  failed(error){this.set({status:'error',checkedAt:this.now(),error:/404|No published versions|No releases/i.test(String(error?.message))?'GitHub 尚未发布可更新的正式版本。':'更新失败，请检查网络或稍后重试。'});}
  async check(){
   if(!this.installed){this.set({status:'installer_required'});return;}
-  if(this.busy||['available','downloading','ready'].includes(this.value.status))return;
+  if(this.busy||['available','downloading','ready','installing'].includes(this.value.status))return;
   this.busy=true;this.set({status:'checking',error:null});
   try{await this.engine.checkForUpdates();}catch(error){this.failed(error);}finally{this.busy=false;}
  }
  start(){this.stop();if(!this.enabled||!this.installed)return;this.first=setTimeout(()=>void this.check(),15000);this.first.unref?.();this.timer=setInterval(()=>void this.check(),60*60*1000);this.timer.unref?.();}
  configure(enabled){this.enabled=Boolean(enabled);this.start();this.emit('change');}
- install(){if(this.value.status!=='ready')throw new Error('更新尚未下载完成。');this.beforeInstall();this.engine.quitAndInstall(false,true);}
+ install(){if(this.value.status!=='ready')throw new Error('更新尚未下载完成。');this.beforeInstall();this.set({status:'installing'});try{this.engine.quitAndInstall(false,true);}catch(error){this.failed(error);throw error;}}
  stop(){clearTimeout(this.first);clearInterval(this.timer);}
 }
 module.exports={Updates,REPOSITORY,notesText,publishedTime};

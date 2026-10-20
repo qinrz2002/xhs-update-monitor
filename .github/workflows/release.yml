@@ -32,6 +32,8 @@ jobs:
         run: node scripts/verify-product-ui.cjs
       - name: Verify version changes
         run: node scripts/release-notes.cjs --check
+      - name: Verify update installation animation with isolated backend
+        run: node scripts/verify-update-install.cjs
       - run: pnpm package
       - uses: actions/upload-artifact@v4
         with:

@@ -103,12 +103,12 @@ function renderSoftwareUpdate(state){
  const u=state.softwareUpdate||{},version=state.appVersion||u.version||'未知';
  $('app-version').textContent='v'+version;$('about-version').textContent='v'+version;
  $('automatic-updates').checked=u.automatic!==false;
- const labels={idle:'等待检查',checking:'正在检查 GitHub 新版本…',available:'发现新版本 v'+u.latest+'，正在开始下载…',current:'当前已是最新正式版本',downloading:'正在下载 v'+u.latest+'：'+Math.floor(u.percent||0)+'%',ready:'v'+u.latest+' 下载完成，等待重启安装',error:u.error||'更新失败，请重试',installer_required:'安装 Setup 版本后启用自动更新'};
+ const labels={idle:'等待检查',checking:'正在检查 GitHub 新版本…',available:'发现新版本 v'+u.latest+'，正在开始下载…',current:'当前已是最新正式版本',downloading:u.downloadPhase==='verifying'?'下载完成，正在校验安装包…':'正在下载 v'+u.latest+'：'+Math.floor(u.percent||0)+'%',ready:'v'+u.latest+' 下载完成，等待重启安装',installing:'正在准备安装，安装进度窗口即将打开…',error:u.error||'更新失败，请重试',installer_required:'安装 Setup 版本后启用自动更新'};
  $('update-status').textContent=labels[u.status]||'等待检查';$('update-progress').hidden=u.status!=='downloading';$('update-progress').value=u.percent||0;
  $('update-checked').textContent=u.checkedAt?'最近检查：'+time(u.checkedAt,true):'';
  $('install-update').hidden=u.status!=='ready';$('update-installer-note').hidden=u.status!=='installer_required';if(u.status==='installer_required')$('update-installer-note').textContent='请使用 Setup 安装版以启用自动更新。';
  $('check-update').hidden=u.status==='ready';
- $('check-update').disabled=['checking','available','downloading','ready'].includes(u.status);
+ $('check-update').disabled=['checking','available','downloading','ready','installing'].includes(u.status);
  renderReleaseDetails('about',u);
  renderUpdateNotice(u,version);
 }
@@ -119,21 +119,26 @@ function renderReleaseDetails(prefix,u){
  $(prefix+'-release-time').textContent=u.publishedAt?'发布时间：'+releaseTime(u.publishedAt):u.releaseInfoStatus==='loading'?'发布时间：正在读取…':'发布时间：暂未获取';
  $(prefix+'-release-notes').textContent=u.releaseNotes||(u.releaseInfoStatus==='loading'?'正在读取此版本的更新内容…':'此版本暂未提供可显示的更新说明。');
 }
-const updateNoticesSeen=new Set();let latestSoftwareUpdate=null;
+const updateNoticesSeen=new Set();let latestSoftwareUpdate=null,updateInstallPending=false;
 function renderUpdateNotice(update,currentVersion){
  latestSoftwareUpdate={...update,currentVersion};
- const available=!!update.latest&&update.latest!==currentVersion&&['available','downloading','ready','error'].includes(update.status);
+ if(update.status==='error')updateInstallPending=false;
+ const installing=updateInstallPending||update.status==='installing';
+ const available=!!update.latest&&update.latest!==currentVersion&&['available','downloading','ready','installing','error'].includes(update.status);
  $('software-update-badge').hidden=!available;
  $('software-update-badge').title=available?'发现新版本 v'+update.latest:'';
  const dialog=$('software-update-dialog');
+ dialog.classList.toggle('is-installing',installing);dialog.setAttribute('aria-busy',String(installing));
+ $('close-software-update').disabled=$('postpone-software-update').disabled=installing;
+ $('software-update-prompt-title').textContent=installing?'正在准备更新，请稍候':'检测到新版本，是否更新？';
  if(dialog.open){
   renderReleaseDetails('prompt',update);
   $('software-update-version').textContent='当前版本 v'+currentVersion+' → 新版本 v'+update.latest;
-  const ready=update.status==='ready',failed=update.status==='error',percent=Math.floor(update.percent||0);
-  $('software-update-prompt-status').textContent=ready?'新版已下载并校验完成。是否现在重启并更新？':failed?(update.error||'新版下载未完成，请前往软件更新查看。'):'新版正在后台下载'+(update.status==='downloading'?'（'+percent+'%）':'')+'，完成后即可重启更新。';
+  const ready=update.status==='ready',failed=update.status==='error',verifying=update.status==='downloading'&&update.downloadPhase==='verifying',percent=Math.floor(update.percent||0);
+  $('software-update-prompt-status').textContent=installing?'正在保存数据并启动安装程序，安装进度窗口即将打开。完成后会自动打开新版，请勿重复操作。':ready?'新版已下载并校验完成。是否现在重启并更新？':failed?(update.error||'新版下载未完成，请前往软件更新查看。'):verifying?'下载完成，正在校验安装包，校验通过后即可重启更新。':'新版正在后台下载'+(update.status==='downloading'?'（'+percent+'%）':'')+'，完成后即可重启更新。';
   $('software-update-prompt-progress').hidden=!['available','downloading'].includes(update.status);$('software-update-prompt-progress').value=update.percent||0;
-  $('confirm-software-update').disabled=!ready&&!failed;
-  $('confirm-software-update').textContent=ready?'重启并更新':failed?'查看更新':'正在下载…';
+  $('confirm-software-update').disabled=installing||!ready&&!failed;
+  $('confirm-software-update').textContent=installing?'正在启动安装…':ready?'重启并更新':failed?'查看更新':verifying?'正在校验…':'正在下载…';
   if(!available)dialog.close();
  }
  maybeShowUpdateNotice();
@@ -144,18 +149,23 @@ function maybeShowUpdateNotice(){
  updateNoticesSeen.add(u.latest);dialog.showModal();renderUpdateNotice(u,u.currentVersion);$('postpone-software-update').focus();
 }
 document.addEventListener('close',()=>queueMicrotask(maybeShowUpdateNotice),true);
-$('postpone-software-update').onclick=()=>$('software-update-dialog').close();
-$('close-software-update').onclick=()=>$('software-update-dialog').close();
+$('software-update-dialog').addEventListener('cancel',event=>{if(updateInstallPending||latestSoftwareUpdate?.status==='installing')event.preventDefault();});
+$('postpone-software-update').onclick=()=>{if(!updateInstallPending&&latestSoftwareUpdate?.status!=='installing')$('software-update-dialog').close();};
+$('close-software-update').onclick=$('postpone-software-update').onclick;
+async function beginUpdateInstall(){
+ if(updateInstallPending||latestSoftwareUpdate?.status!=='ready')return;
+ updateInstallPending=true;const dialog=$('software-update-dialog');if(!dialog.open)dialog.showModal();renderUpdateNotice(latestSoftwareUpdate,latestSoftwareUpdate.currentVersion);
+ await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+ try{await call('install-update');}catch(error){updateInstallPending=false;renderUpdateNotice(latestSoftwareUpdate,latestSoftwareUpdate.currentVersion);$('software-update-prompt-status').textContent=error.message;}
+}
 $('confirm-software-update').onclick=async()=>{
  const u=latestSoftwareUpdate;if(u?.status==='error'){$('software-update-dialog').close();navigate('about');return;}
- if(u?.status!=='ready')return;
- const button=$('confirm-software-update');button.disabled=true;
- try{await call('install-update');$('software-update-dialog').close();}catch(error){$('software-update-prompt-status').textContent=error.message;}finally{button.disabled=false;}
+ await beginUpdateInstall();
 };
  $('github-link').onclick=event=>{event.preventDefault();void call('open-github').catch(()=>{});};
  $('automatic-updates').onchange=()=>{void call('config',{automaticUpdates:$('automatic-updates').checked}).catch(()=>{});};
  $('check-update').onclick=()=>{void call('check-update').catch(()=>{});};
- $('install-update').onclick=()=>{void call('install-update').catch(()=>{});};
+ $('install-update').onclick=()=>{void beginUpdateInstall();};
  initializeAuthorDialog();
  window.monitor.subscribe(render);window.monitor.onNavigate(navigate);window.addEventListener('unhandledrejection',event=>event.preventDefault());setInterval(tick,1000);void call('snapshot').then(result=>{render(result.state);return call('ui-ready',{theme:document.documentElement.dataset.theme,visible:!document.body.hidden});});
 

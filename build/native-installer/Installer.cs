@@ -23,7 +23,13 @@ internal static class InstallerProgram {
   [STAThread] static int Main(string[] args) {
     try {
       if(args.Length==1&&args[0]=="--verify-package"){string directory;Extract(out directory);TryDelete(directory);Console.WriteLine("{\"passed\":true,\"embeddedPackageHashVerified\":true,\"installerExecuted\":false}");return 0;}
-      if(args.Any(a=>a=="/S"||a=="--updated")){
+      if(args.Contains("--updated")){
+        SetProcessDPIAware();var updateApp=new Application();var update=new UpdateWindow(args);updateApp.Run(update.Window);return update.ExitCode;
+      }
+      if(args.Length==2&&args[0].StartsWith("--render-update-preview")){
+        SetProcessDPIAware();var previewApp=new Application();var update=new UpdateWindow(new string[0]);update.Render(args[0],args[1]);return 0;
+      }
+      if(args.Contains("/S")){
         string directory,file=Extract(out directory);
         try{var forwarded=args.Where(a=>!a.StartsWith("/D=",StringComparison.OrdinalIgnoreCase)).Select(Quote).ToList();if(!args.Contains("/S"))forwarded.Add("/S");var destination=args.FirstOrDefault(a=>a.StartsWith("/D=",StringComparison.OrdinalIgnoreCase));if(destination!=null)forwarded.Add(destination);using(var p=Process.Start(new ProcessStartInfo(file,String.Join(" ",forwarded.ToArray())){UseShellExecute=false})){p.WaitForExit();return p.ExitCode;}}
         finally{TryDelete(directory);}
@@ -62,6 +68,56 @@ internal sealed class InstallProgress {
     if(lines[1]=="finalize")return 98;if(lines[1]=="files")return 95;
     foreach(var pair in files){if(complete.Contains(pair.Key))continue;string file=Path.Combine(root,"7z-out",pair.Key);try{using(var s=new FileStream(file,FileMode.Open,FileAccess.Read,FileShare.None)){if(s.Length!=pair.Value)continue;}complete.Add(pair.Key);finished+=pair.Value;}catch(IOException){}catch(UnauthorizedAccessException){}}
     return total>0?20+(int)(finished*70/total):20;
+  }
+}
+
+// This small independent window remains alive while Electron exits and NSIS works.
+// Only completed file bytes/backend stages advance the bar; the spinner shows activity.
+internal sealed class UpdateWindow {
+  internal readonly Window Window;
+  internal int ExitCode=1;
+  private readonly string[] args;
+  private readonly TextBlock title,status,percent,hint;
+  private readonly Border fill;
+  private readonly Button close;
+  private readonly System.Windows.Media.Animation.DoubleAnimation rotation;
+  private readonly RotateTransform spinner;
+  private bool working,started;
+  private int progress;
+  internal UpdateWindow(string[] arguments){
+    args=arguments;
+    using(var s=Assembly.GetExecutingAssembly().GetManifestResourceStream("UpdateLayout"))Window=(Window)XamlReader.Load(s);
+    title=(TextBlock)Window.FindName("UpdateTitle");status=(TextBlock)Window.FindName("UpdateStatus");percent=(TextBlock)Window.FindName("UpdatePercent");hint=(TextBlock)Window.FindName("UpdateHint");fill=(Border)Window.FindName("UpdateFill");close=(Button)Window.FindName("UpdateClose");
+    ((TextBlock)Window.FindName("UpdateVersion")).Text="小红书更新监控  /  v"+EmbeddedPackage.Version;
+    spinner=(RotateTransform)((System.Windows.Shapes.Path)Window.FindName("UpdateSpinner")).RenderTransform;
+    rotation=new System.Windows.Media.Animation.DoubleAnimation(0,360,TimeSpan.FromSeconds(1.2)){RepeatBehavior=System.Windows.Media.Animation.RepeatBehavior.Forever};
+    close.Click+=(s,e)=>Window.Close();Window.Closing+=(s,e)=>{if(working)e.Cancel=true;};
+    Window.ContentRendered+=async(s,e)=>{if(started)return;started=true;await Run();};
+  }
+  internal void Update(int value,string text){progress=Math.Max(progress,Math.Min(100,value));status.Text=text;percent.Text=progress+"%";fill.Width=458*progress/100.0;}
+  internal void Animate(){if(SystemParameters.ClientAreaAnimation)spinner.BeginAnimation(RotateTransform.AngleProperty,rotation);}
+  internal void Failed(string message){spinner.BeginAnimation(RotateTransform.AngleProperty,null);title.Text="更新未完成";status.Text=message;hint.Text="请关闭此窗口，稍后重试安装。";close.Visibility=Visibility.Visible;working=false;}
+  private async Task Run(){
+    working=true;Animate();string temp=null;
+    try{
+      // Extraction and checksum verification run off the UI thread so animation stays responsive.
+      string localTemp=null;string payload=await Task.Run(()=>InstallerProgram.Extract(out localTemp,p=>Window.Dispatcher.BeginInvoke(new Action(()=>Update(p,p<15?"正在读取安装文件…":"正在校验安装文件…")))));temp=localTemp;
+      string bridge=Path.Combine(temp,"progress.txt");var reporter=new InstallProgress();
+      var forwarded=args.Where(a=>!a.StartsWith("/D=",StringComparison.OrdinalIgnoreCase)).Select(InstallerProgram.Quote).ToList();if(!args.Contains("/S"))forwarded.Add("/S");
+      var destination=args.FirstOrDefault(a=>a.StartsWith("/D=",StringComparison.OrdinalIgnoreCase));if(destination!=null)forwarded.Add(destination);
+      var info=new ProcessStartInfo(payload,String.Join(" ",forwarded.ToArray())){UseShellExecute=false,CreateNoWindow=true};info.EnvironmentVariables["XHS_SETUP_PROGRESS_FILE"]=bridge;
+      using(var process=Process.Start(info)){
+        while(!process.HasExited){int value=await Task.Run(()=>reporter.Read(bridge));Update(value,value>=95?"正在完成安装并准备启动新版…":"正在解包并安装程序文件…");await Task.Delay(160);}
+        if(process.ExitCode!=0)throw new IOException("安装未完成（代码 "+process.ExitCode+"）。");
+      }
+      Update(100,"更新完成，正在打开新版…");ExitCode=0;await Window.Dispatcher.InvokeAsync(()=>{},DispatcherPriority.Render);await Task.Delay(600);spinner.BeginAnimation(RotateTransform.AngleProperty,null);working=false;Window.Close();
+    }catch(Exception ex){Failed(ex.Message);}
+    finally{if(temp!=null)InstallerProgram.TryDelete(temp);}
+  }
+  internal void Render(string mode,string file){
+    started=true;Window.ShowInTaskbar=false;Window.WindowStartupLocation=WindowStartupLocation.Manual;Window.Left=Window.Top=-10000;
+    Update(62,"正在解包并安装程序文件…");if(mode.EndsWith("-error"))Failed("安装未完成（代码 2）。");
+    Window.Show();Window.UpdateLayout();var target=(FrameworkElement)Window.Content;var bitmap=new RenderTargetBitmap((int)Math.Ceiling(target.ActualWidth*1.25),(int)Math.Ceiling(target.ActualHeight*1.25),120,120,PixelFormats.Pbgra32);bitmap.Render(target);var encoder=new PngBitmapEncoder();encoder.Frames.Add(BitmapFrame.Create(bitmap));using(var output=File.Create(file))encoder.Save(output);Window.Close();
   }
 }
 
