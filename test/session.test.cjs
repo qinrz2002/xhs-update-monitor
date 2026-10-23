@@ -46,7 +46,7 @@ test('failed encrypted save can retry the same session value', async t=>{
   const f=fixture(t,[cookie('synthetic-retry')]); let count=0;
   f.safeStorage.encryptStringAsync=async s=>{if(++count===1)throw Error('synthetic failure'); return Buffer.from(s)};
   await f.session.capture(); assert.equal(f.session.state,'session_unavailable'); assert.equal(f.session.lastSession,null);
-  await f.session.capture(); assert.equal(f.session.lastSession,'synthetic-retry'); assert.equal(f.session.state,'verifying');
+  await f.session.capture(); assert.equal(f.session.lastSession,'synthetic-retry'); assert.equal(f.session.state,'unverified');
 });
 test('cookie changes during capture are drained and persistence is serialized', async t=>{
   const f=fixture(t,[cookie('synthetic-first')]); let active=0,max=0,unblock,started;
@@ -76,7 +76,7 @@ test('curl session rotation persists without triggering an extra login request; 
  await f.session.setCookies('https://www.xiaohongshu.com/user/profile/test',['web_session=synthetic-rotated; Domain=.xiaohongshu.com; Path=/; Secure; HttpOnly']);
  await new Promise(setImmediate);assert.equal(candidates,0);assert.equal(f.session.lastSession,'synthetic-rotated');assert.equal(f.session.state,'logged_in');
  assert(JSON.parse(fs.readFileSync(path.join(f.dir,'session.enc'),'utf8')).cookies.some(c=>c.value==='synthetic-rotated'));
- await f.jar.set(cookie('synthetic-browser-login'));await new Promise(setImmediate);await f.session.persistTail;assert.equal(candidates,1);assert.equal(f.session.state,'verifying');
+ await f.jar.set(cookie('synthetic-browser-login'));await new Promise(setImmediate);await f.session.persistTail;assert.equal(candidates,1);assert.equal(f.session.state,'unverified');
 });
 class LoginWindow extends EventEmitter {
   constructor(){super();this.destroyed=false;this.url='https://www.xiaohongshu.com/login';this.webContents=new EventEmitter();this.webContents.getURL=()=>this.url;this.webContents.setWindowOpenHandler=()=>{};}
@@ -86,7 +86,7 @@ class LoginWindow extends EventEmitter {
 test('same session value can be revalidated without declaring it logged in',async t=>{
   const f=fixture(t,[cookie('synthetic-unchanged')]);let candidates=0;f.session.on('candidate',()=>candidates++);
   await f.session.capture();await f.session.capture();assert.equal(candidates,1);
-  await f.session.capture({verifyExisting:true});assert.equal(candidates,2);assert.equal(f.session.state,'verifying');
+  await f.session.capture({verifyExisting:true});assert.equal(candidates,2);assert.equal(f.session.state,'unverified');
 });
 test('official SPA navigation revalidates unchanged cookie once after the probe gap',async t=>{
   t.mock.timers.enable({apis:['setTimeout','Date'],now:100000});
@@ -95,7 +95,7 @@ test('official SPA navigation revalidates unchanged cookie once after the probe 
   win.webContents.emit('did-navigate-in-page',{},'https://www.xiaohongshu.com/explore',true);
   win.webContents.emit('did-navigate-in-page',{},'https://www.xiaohongshu.com/explore',true);
   t.mock.timers.tick(9999);await new Promise(setImmediate);assert.equal(candidates,1);
-  t.mock.timers.tick(1);await new Promise(setImmediate);assert.equal(candidates,2);assert.equal(f.session.state,'verifying');win.close();
+  t.mock.timers.tick(1);await new Promise(setImmediate);assert.equal(candidates,2);assert.equal(f.session.state,'unverified');win.close();
 });
 test('verification pages, subframes and cancelled windows do not trigger navigation probes',async t=>{
   t.mock.timers.enable({apis:['setTimeout','Date'],now:100000});

@@ -2,9 +2,10 @@
 const { EventEmitter } = require('node:events');
 const { randomUUID } = require('node:crypto');
 const { randomDelay, interval } = require('./store.cjs');
+const { httpSessionVerified } = require('./collector.cjs');
 class Scheduler extends EventEmitter {
-  constructor(store, collector, { now = Date.now, random = Math.random, minimumGapMs = 10000 } = {}) {
-    super(); this.store = store; this.collector = collector; this.now = now; this.random = random; this.minimumGapMs = minimumGapMs;
+  constructor(store, collector, { now = Date.now, random = Math.random, minimumGapMs = 10000, sessionRevision = () => 0 } = {}) {
+    super(); this.store = store; this.collector = collector; this.now = now; this.random = random; this.minimumGapMs = minimumGapMs; this.sessionRevision = sessionRevision;
     this.queue = []; this.active = null; this.nextGlobal = store.state.requestPolicy?.cooldownUntil || 0; this.sessionBlocked = Boolean(store.state.accessBlock || store.state.requestPolicy?.blocked); this.lastTick = this.now(); this.timer = null;
     this.reschedule();
   }
@@ -83,13 +84,15 @@ class Scheduler extends EventEmitter {
     const m = this.store.state.monitors.find(m => m.id === job.id && (m.enabled || job.profileRefresh)); if (!m) return;
     const controller = new AbortController(), generation = m.generation;
     this.active = { id: m.id, controller }; m.status = 'checking'; m.lastAttempt = new Date(this.now()).toISOString(); this.plan(m); this.store.commit(); this.changed();
-    let result;
+    let result, sessionChanged = false; const sessionRevision = this.sessionRevision();
     try {
       result = await this.collector.collect(structuredClone(m), controller.signal);
       if (controller.signal.aborted) return;
+      if (sessionRevision !== this.sessionRevision()) { sessionChanged = true; return; }
       const applied = job.profileRefresh ? this.store.applyProfile(m.id, generation, result) : this.store.applyResult(m.id, generation, result);
       if (applied.stale) return;
-      if (result.loggedIn && result.account) this.emit('account', result.account);
+      if (httpSessionVerified(result)) this.emit('session-verified', {result,revision:sessionRevision});
+      else if (sessionRevision === this.sessionRevision() && result.loggedIn && result.account) this.emit('account', result.account);
       if (result.status === 'login_required') { this.blockSession(); this.emit('login-required'); }
       if (result.status === 'verification_required') { this.blockSession('verification_required'); this.emit('verification-required'); }
       if (['account_restricted', 'client_restricted'].includes(result.status)) { this.blockSession(result.status); this.emit('account-restricted', result.status); }
@@ -123,8 +126,8 @@ class Scheduler extends EventEmitter {
       }
     } finally {
       const current = this.store.state.monitors.find(n => n.id === m.id && n.generation === generation);
-      if (controller.signal.aborted && current?.status === 'checking') {
-        current.status = 'pending'; current.message = '本次检测已取消，保留最近成功结果。'; this.store.commit();
+      if ((controller.signal.aborted || sessionChanged) && current?.status === 'checking') {
+        current.status = 'pending'; current.message = sessionChanged ? '登录会话已变化，保留最近成功结果，等待下次检测。' : '本次检测已取消，保留最近成功结果。'; this.store.commit();
       }
       const gap = this.minimumGapMs ? this.minimumGapMs + Math.floor(this.random() * this.minimumGapMs) : 0;
       this.active = null; this.nextGlobal = Math.max(this.nextGlobal, this.store.state.requestPolicy?.cooldownUntil || 0, this.now() + gap); this.changed();

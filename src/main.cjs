@@ -5,10 +5,11 @@ const path = require('node:path');
 const { Store } = require('./store.cjs');
 const { CurlTransport } = require('./transport.cjs');
 const { RequestPolicy } = require('./request-policy.cjs');
-const { Collector, httpSessionVerified, stateFromHtml, parseProfile } = require('./collector.cjs');
+const { Collector, stateFromHtml, parseProfile } = require('./collector.cjs');
 const { accountFromState } = require('./account.cjs');
 const { Scheduler } = require('./scheduler.cjs');
 const { LoginSession } = require('./session.cjs');
+const { LoginVerifier } = require('./login-verifier.cjs');
 const { NativeNotifier } = require('./notifier.cjs');
 const { notificationIdentity, repairNotificationRegistration } = require('./notification-registration.cjs');
 const { NotificationActivation } = require('./notification-activation.cjs');
@@ -27,7 +28,7 @@ if(process.argv.includes('--xhs-activate-legacy')){
 }
 const { data: DATA, profile: PROFILE, pipe: INSTANCE_PIPE, locator: DATA_LOCATOR } = instancePaths(e.app, e.app.isPackaged ? path.dirname(process.execPath) : ROOT);
 e.app.setName(nativeIdentity.name);
-let mainWindow, alarmWindow, tray, store, login, scheduler, transport, notifier, updates, quitting = false, testEvents = [], syncToken = 0;
+let mainWindow, alarmWindow, tray, store, login, scheduler, transport, notifier, updates, verifier, quitting = false, testEvents = [];
 let notificationStatus = 'not_yet_shown', activationPending = false, mainReady = false, instanceServer, discovery;
 let nativeReady = false, rendererReady = false, pendingNavigation = null;
 const notificationActivation = new NotificationActivation({
@@ -46,7 +47,7 @@ function recordStartup(event, details = {}) {
 }
 function state() {
   const snapshot = store.snapshot();
-  return { ...snapshot, appVersion:require('../package.json').version, softwareUpdate:updates?.snapshot(), login: login.state, account: login.account, sessionBlocked: scheduler.sessionBlocked, queued: scheduler.queue.map(j => j.id), active: scheduler.active?.id || null, pending: [...store.pending(), ...testEvents], notificationSupported: supportsNativeNotifications(), notificationStatus, dataDirectory: DATA };
+  return { ...snapshot, appVersion:require('../package.json').version, softwareUpdate:updates?.snapshot(), login: login.state, loginDetails: login.verification, account: login.account, sessionBlocked: scheduler.sessionBlocked, queued: scheduler.queue.map(j => j.id), active: scheduler.active?.id || null, pending: [...store.pending(), ...testEvents], notificationSupported: supportsNativeNotifications(), notificationStatus, dataDirectory: DATA };
 }
 function broadcast() {
   if (!store || !login || !scheduler) return;
@@ -98,42 +99,14 @@ function notifyNative() {
   if (!store.state.config.notifications) { notifier?.clear(); return; }
   notifier?.show([...store.pending(), ...testEvents]);
 }
-let verificationJob = null;
-function verifyLogin({ explicit = false } = {}) {
-  const reason = store.state.accessBlock?.reason || transport.policy.state.blocked;
-  // Cookie changes/startup must never probe an account that was stopped by a restriction.
-  if (!explicit && (reason || Date.now() - (transport.policy.state.lastVerificationAt || 0) < 5 * 60000)) return Promise.resolve();
-  if (verificationJob) return verificationJob;
-  verificationJob = performVerification({ explicit }).finally(() => { verificationJob = null; });
-  return verificationJob;
-}
-async function performVerification({ explicit = false } = {}) {
-  const token = ++syncToken;
+function verifyLogin(options) { return verifier.verify(options); }
+async function probeLogin(options) {
   const m = store.state.monitors[0];
-  try {
-    let result;
-    if (m) result = await new Collector(transport).collect(m, undefined, { verificationProbe: explicit });
-    else {
-      const response = await transport.request('https://www.xiaohongshu.com/explore', { verificationProbe: explicit });
-      let account; try { if (response.status === 200) account = accountFromState(stateFromHtml(response.body)); } catch {}
-      result = account ? { status: 'account_verified', account } : parseProfile(response, '');
-    }
-    if (token !== syncToken) return;
-    if (httpSessionVerified(result) || result.status === 'account_verified') {
-      login.setAccount(result.account);
-      const reason = store.state.accessBlock?.reason;
-      if (!explicit && ['account_restricted','client_restricted'].includes(reason)) { login.setState(reason); return; }
-      transport.policy.state.lastVerificationAt = Date.now(); transport.policy.clearBlock();
-      login.verified(); scheduler.unblock();
-    }
-    else if (result.status === 'login_required') { scheduler.blockSession(); login.invalid(); }
-    else if (result.status === 'verification_required') { scheduler.blockSession('verification_required'); login.setState('verification_required'); }
-    else if (['account_restricted','client_restricted'].includes(result.status)) { scheduler.blockSession(result.status); login.setState(result.status); }
-    else login.setState('http_not_verified');
-  } catch (error) {
-    if (token === syncToken && error.code !== 'REQUEST_POLICY') login.setState('network_error');
-    if (explicit && error.code === 'REQUEST_POLICY') throw error;
-  }
+  if (m) return new Collector(transport).collect(m, options.signal, options);
+  const response = await transport.request('https://www.xiaohongshu.com/explore', options);
+  let account; try { if (response.status === 200) account = accountFromState(stateFromHtml(response.body)); } catch {}
+  const restricted = require('./request-policy.cjs').responseRestriction(response);
+  return account && !restricted ? {status:'account_verified',account} : parseProfile(response, '');
 }
 function checkSender(event) {
   const sender = event.sender;
@@ -275,7 +248,8 @@ else {
     });
     transport = new CurlTransport({ policy: requestPolicy, cookies: url => login.cookieHeader(url), onSetCookies: (url, lines) => login.setCookies(url, lines) });
     discovery = new AuthorDiscovery(transport);
-    scheduler = new Scheduler(store, new Collector(transport));
+    scheduler = new Scheduler(store, new Collector(transport), {sessionRevision:()=>login.revision});
+    verifier = new LoginVerifier({login,scheduler,store,transport,probe:probeLogin});
     notifier = new NativeNotifier(e.Notification, {
       acknowledge,
       view: openUpdates,
@@ -291,6 +265,7 @@ else {
     scheduler.on('verification-required', () => login.setState('verification_required'));
     scheduler.on('account-restricted', status => login.setState(status));
     scheduler.on('account', account => login.setAccount(account));
+    scheduler.on('session-verified', ({result,revision}) => verifier.observe(result,revision));
     login.on('change', broadcast); login.on('candidate', () => { void verifyLogin(); });
     login.on('login-page-loaded', details => recordStartup('official-login-document-loaded', details));
     await login.init();
@@ -318,4 +293,4 @@ else {
   }).catch(() => { e.dialog.showErrorBox('启动失败', '本地数据或桌面依赖无法加载。请保留 data 目录并查看交付说明。'); e.app.exit(1); });
 }
 e.app.on('window-all-closed', () => {});
-e.app.on('before-quit', () => { quitting = true; updates?.stop(); scheduler?.stop(); if (alarmWindow && !alarmWindow.isDestroyed()) alarmWindow.destroy(); store?.commit(); instanceServer?.close(); });
+e.app.on('before-quit', () => { quitting = true; verifier?.cancel(); updates?.stop(); scheduler?.stop(); if (alarmWindow && !alarmWindow.isDestroyed()) alarmWindow.destroy(); store?.commit(); instanceServer?.close(); });

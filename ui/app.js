@@ -2,7 +2,7 @@
 let snapshot, page = 'overview', filter = 'all', deleting = null, messageTimer, intervalDirty = false, highlightedAuthor = null, locateOnRender = false, listingAuthor = null, articleRequest = 0;
 const $ = id => document.getElementById(id);
 const statusLabels = { pending:'待检测',checking:'检测中',ok:'正常',preview_only:'仅预览',verifying_identity:'核验标识',identity_unstable:'标识不稳定',incomplete:'数据不完整',login_required:'需要登录',verification_required:'需要验证',account_restricted:'账号受限',client_restricted:'客户端受限',network_error:'网络异常',http_error:'访问失败',parse_error:'解析失败',rate_limited:'等待限流',wrong_profile:'身份不匹配' };
-const loginLabels = {unknown:'待验证',not_logged_in:'未登录',unverified:'待验证',logged_in:'已登录',waiting_scan:'等待扫码',verifying:'HTTP 验证中',expired:'登录失效',verification_required:'需要安全验证',account_restricted:'账号受限',client_restricted:'客户端受限',network_error:'网络异常',http_not_verified:'HTTP 未通过',login_cancelled:'登录已取消',session_unavailable:'会话不可用'};
+const loginLabels = {unknown:'待验证',not_logged_in:'未登录',unverified:'待验证',logged_in:'已登录',waiting_scan:'等待扫码',verifying:'HTTP 验证中',verification_waiting:'验证排队中',verification_deferred:'等待验证',verification_timeout:'验证超时',expired:'登录失效',verification_required:'需要安全验证',account_restricted:'账号受限',client_restricted:'客户端受限',network_error:'网络异常',http_not_verified:'HTTP 未通过',login_cancelled:'登录已取消',session_unavailable:'会话不可用'};
 statusLabels.profile_updated='资料已刷新';
 function el(tag, text, cls) {const node=document.createElement(tag);if(text!==undefined)node.textContent=text;if(cls)node.className=cls;return node;}
 function icon(name){const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');svg.setAttribute('class','icon');svg.setAttribute('aria-hidden','true');const use=document.createElementNS(svg.namespaceURI,'use');use.setAttribute('href','#i-'+name);svg.append(use);return svg;}
@@ -24,10 +24,11 @@ function button(text,action){const b=el('button',text);b.onclick=()=>{Promise.re
 function render(state){snapshot=state;document.documentElement.dataset.theme=state.config.theme;document.body.hidden=false;
  for(const t of ['light','dark'])$(t).classList.toggle('active',t===state.config.theme);
  $('login').textContent=loginLabels[state.login]||state.login;$('login').className='pill '+(state.login==='logged_in'?'ok':'');
- $('account-name').hidden=state.login!=='logged_in';$('account-name').textContent=state.account?.name||'账号信息待获取';$('account-name').title=state.account?.name||'打开主页可读取当前登录账号信息';
+ $('account-name').hidden=!state.account;$('account-name').textContent=state.account?.name||'账号信息待获取';$('account-name').title=state.account?.name||'打开主页可读取当前登录账号信息';
  labeled($('run'),state.config.running?'pause':'play',state.config.running?'暂停监控':'开始监控');
- $('account-label').textContent=state.login==='logged_in'?(state.account?.name||'已登录'):'连接账号';
- $('account-trigger').title=loginLabels[state.login]||state.login;$('account-status').textContent=loginLabels[state.login]||state.login;$('account-status').className='account-status '+(state.login==='logged_in'?'connected':'');
+ $('account-label').textContent=state.account?.name||(state.login==='logged_in'?'已登录':'连接账号');
+ $('account-trigger').title=state.loginDetails?.message||(loginLabels[state.login]||state.login);$('account-status').textContent=loginLabels[state.login]||state.login;$('account-status').className='account-status '+(state.login==='logged_in'?'connected':'');
+ let detail=$('login-detail');if(!detail){detail=el('p',undefined,'login-detail');detail.id='login-detail';detail.setAttribute('role','status');$('account-actions').insertBefore(detail,$('verify'));}detail.textContent=(state.loginDetails?.message||'')+(state.loginDetails?.retryAt?' 可重试时间：'+time(state.loginDetails.retryAt):'');detail.hidden=!detail.textContent;
  $('today-label').textContent=new Intl.DateTimeFormat('zh-CN',{timeZone:'Asia/Shanghai',month:'long',day:'numeric',weekday:'long'}).format(new Date());
  const running=state.config.running&&!state.sessionBlocked;
  $('run-label').textContent=state.sessionBlocked?'等待账号验证':running?'监控正在运行':'监控已暂停';

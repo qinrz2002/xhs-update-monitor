@@ -33,7 +33,7 @@ function parseResponse(raw) {
 class CurlTransport {
   constructor({ cookies = async () => '', onSetCookies = async () => {}, policy = new RequestPolicy(), wait = (ms, signal) => delay(ms, undefined, { signal }) } = {}) { this.cookies = cookies; this.onSetCookies = onSetCookies; this.policy = policy; this.wait = wait; this.tail = Promise.resolve(); }
   searchUsers(keyword){return this.request(require('./user-search.cjs').SEARCH_API,{searchKeyword:keyword});}
-  async request(value, { signal, userAgent = USER_AGENT, searchKeyword, verificationProbe = false } = {}) {
+  async request(value, { signal, userAgent = USER_AGENT, searchKeyword, verificationProbe = false, onRequestStart } = {}) {
     if (!(searchKeyword !== undefined && value === require('./user-search.cjs').SEARCH_API)) checkedUrl(value);
     const previous = this.tail; let release;
     this.tail = new Promise(resolve => { release = resolve; });
@@ -46,7 +46,7 @@ class CurlTransport {
       if (signal?.aborted) throw new Error('请求已取消');
       const ticket = this.policy.begin(value, { verificationProbe });
       let response;
-      try { response = await this.perform(value, { signal, userAgent, searchKeyword }); }
+      try { onRequestStart?.(); response = await this.perform(value, { signal, userAgent, searchKeyword }); }
       catch (error) { this.policy.finish(ticket, null, error); throw error; }
       this.policy.finish(ticket, response);
       if (!this.policy.state.blocked && ['www.xiaohongshu.com', 'edith.xiaohongshu.com'].includes(new URL(value).hostname) && response.headers['set-cookie']) await this.onSetCookies(value, response.headers['set-cookie']);

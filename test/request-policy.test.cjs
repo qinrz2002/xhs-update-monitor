@@ -67,6 +67,12 @@ test('abort while waiting consumes no request and no cookie; queued work recheck
  transport.perform=async()=>{wires++;return response();};const c=new AbortController(),job=transport.request(url(1),{signal:c.signal});await ready;c.abort();release();await assert.rejects(job,/取消/);
  assert.equal(wires,0);assert.equal(cookies,0);assert.equal(f.p.state.attempts.length,0);
 });
+test('verification start notification happens after queue and gap, never on policy refusal',async()=>{
+ const f=fixture();f.p.state.nextRequestAt=f.now+60000;let release,waiting,starts=0,wires=0;const entered=new Promise(r=>waiting=r);
+ const transport=new CurlTransport({policy:f.p,wait:ms=>{waiting();return new Promise(r=>{release=()=>{f.advance(ms);r();};});}});transport.perform=async()=>{wires++;return response();};
+ const task=transport.request(url(1),{onRequestStart:()=>starts++});await entered;assert.equal(starts,0);assert.equal(wires,0);release();await task;assert.equal(starts,1);assert.equal(wires,1);
+ f.p.state.cooldownUntil=f.now+600000;await assert.rejects(transport.request(url(2),{verificationProbe:true,onRequestStart:()=>starts++}),e=>e.code==='REQUEST_POLICY');assert.equal(starts,1);assert.equal(wires,1);
+});
 test('request audit contains only timing, endpoint class and status, never URLs, IDs or cookies',async()=>{
  const f=fixture(),transport=new CurlTransport({policy:f.p});transport.perform=async()=>response(200,'private-body',{'set-cookie':['web_session=secret-cookie']});
  await transport.request(url(123)+'?xsec_token=secret-token');const output=JSON.stringify(f.logs);for(const secret of ['secret-cookie','secret-token','private-body',String(123).padStart(24,'0'),'xsec_token'])assert(!output.includes(secret));assert.equal(f.logs[0].endpoint,'profile');assert.equal(f.logs[0].status,200);

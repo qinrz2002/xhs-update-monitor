@@ -12,7 +12,7 @@ class LoginSession extends EventEmitter {
     this.session.setPermissionCheckHandler(() => false);
     this.session.setUserAgent(USER_AGENT);
     this.lastSession = null; this.restoring = false; this.capturePending = false; this.captureExisting = false; this.persistTail = Promise.resolve(); this.lastCandidateAt = 0; this.navigationTimer = null;
-    this.account = null; this.windowPurpose = 'login';
+    this.account = null; this.windowPurpose = 'login'; this.revision = 0; this.verification = null;
     this.session.cookies.on('changed', (_event, cookie, _cause, removed) => { if (!this.restoring && cookie.name === 'web_session' && this.isXhs(cookie.domain) && !removed && cookie.value !== this.lastSession) void this.capture(); });
   }
   isXhs(domain) { if (typeof domain !== 'string') return false; const d = domain.toLowerCase().replace(/^\./, ''); return d === 'xiaohongshu.com' || d.endsWith('.xiaohongshu.com'); }
@@ -43,7 +43,7 @@ class LoginSession extends EventEmitter {
     } catch { this.setState('session_unavailable'); }
     finally { this.restoring = false; }
   }
-  setState(state) { this.state = state; this.emit('change'); }
+  setState(state, details = null) { this.state = state; this.verification = details; this.emit('change'); }
   setAccount(value) { const account = validAccount(value); if (JSON.stringify(this.account) === JSON.stringify(account)) return; this.account = account; this.emit('account', account); this.emit('change'); }
   async readPageAccount(win) {
     if (win.isDestroyed() || !win.webContents.getURL().startsWith('https://www.xiaohongshu.com/')) return;
@@ -89,10 +89,10 @@ class LoginSession extends EventEmitter {
       const cookies = await this.session.cookies.get({ url: 'https://www.xiaohongshu.com/' });
       const current = cookies.find(c => c.name === 'web_session' && c.value && this.isXhs(c.domain));
       if (current && (current.value !== this.lastSession || verifyExisting)) {
-        if (current.value !== this.lastSession) this.setAccount(null);
+        if (current.value !== this.lastSession) { this.revision++; this.setAccount(null); }
         await this.persist(); this.lastSession = current.value;
         this.lastCandidateAt = Date.now();
-        this.setState('verifying'); this.emit('candidate');
+        this.setState('unverified'); this.emit('candidate');
       }
       } while (this.capturePending);
     } catch { this.setState('session_unavailable'); }

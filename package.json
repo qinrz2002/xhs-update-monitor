@@ -1,6 +1,6 @@
 {
   "name": "xhs-update-monitor",
-  "version": "1.1.4",
+  "version": "1.1.5",
   "private": true,
   "description": "Windows 本地小红书多博主更新监控",
   "main": "src/main.cjs",
